@@ -433,15 +433,8 @@ export const reportsApi = {
     if (filters?.segment) q.append("segment", filters.segment);
     if (filters?.pipeline_id) q.append("pipeline_id", filters.pipeline_id);
 
-    const blob = await api.download(`/reports/export?${q.toString()}`);
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${reportType.toLowerCase()}_report_${new Date().toISOString().split("T")[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
+    const filename = `${reportType.toLowerCase()}_report_${new Date().toISOString().split("T")[0]}.csv`;
+    await api.downloadFile(`/reports/export?${q.toString()}`, filename);
   },
 
   getSavedReports: (reportType?: string) =>

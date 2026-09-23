@@ -428,21 +428,8 @@ export default function LeadsPage() {
       if (ownerFilter) params.set("owner_id", ownerFilter);
       if (search.trim()) params.set("search", search.trim());
 
-      const token = typeof window !== "undefined" ? localStorage.getItem("crm_access_token") : null;
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-      const res = await fetch(`${API_BASE}/leads/export?${params.toString()}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error("Failed to export leads");
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `leads_export_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      const filename = `leads_export_${new Date().toISOString().slice(0, 10)}.csv`;
+      await api.downloadFile(`/leads/export?${params.toString()}`, filename);
       toast.success("Leads exported successfully");
     } catch (err: any) {
       toast.error(err?.message || "Failed to export leads");
@@ -451,21 +438,7 @@ export default function LeadsPage() {
 
   const handleDownloadTemplate = async () => {
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("crm_access_token") : null;
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-      const res = await fetch(`${API_BASE}/leads/template`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error("Failed to download template");
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "leads_template.csv";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      await api.downloadFile("/leads/template", "leads_template.csv");
     } catch (err: any) {
       toast.error("Failed to download template");
     }
@@ -506,19 +479,7 @@ export default function LeadsPage() {
       setIsImporting(true);
       const formData = new FormData();
       formData.append("file", importFile);
-
-      const token = typeof window !== "undefined" ? localStorage.getItem("crm_access_token") : null;
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-      const res = await fetch(`${API_BASE}/leads/import`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Failed to import leads");
-      }
+      const data = await api.upload<any>("/leads/import", formData);
 
       setImportResult(data);
       if (data.imported > 0) {

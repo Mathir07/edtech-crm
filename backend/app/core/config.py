@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List, Union, Optional
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
@@ -22,12 +22,14 @@ class Settings(BaseSettings):
     
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = [
+        "https://crm.kiwicloudtech.co.in",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
         "http://localhost",
     ]
+    CORS_ORIGINS: Optional[Union[str, List[str]]] = None
 
     # Company Mail Configuration (Disabled / Not Configured)
     MAIL_PROVIDER: str = "none"
@@ -143,24 +145,39 @@ class Settings(BaseSettings):
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str):
-            if v.startswith("[") and v.endswith("]"):
+        # Allow CORS_ORIGINS from environment to configure or override BACKEND_CORS_ORIGINS
+        env_val = os.getenv("CORS_ORIGINS") or os.getenv("BACKEND_CORS_ORIGINS") or v
+        if isinstance(env_val, str):
+            if env_val.startswith("[") and env_val.endswith("]"):
                 import json
                 try:
-                    return json.loads(v)
+                    return json.loads(env_val)
                 except Exception:
                     pass
-            return [i.strip() for i in v.split(",") if i.strip()]
+            return [i.strip() for i in env_val.split(",") if i.strip()]
+        return env_val
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        if isinstance(v, str):
+            # Render / Neon / Supabase standard URLs:
+            if v.startswith("postgres://"):
+                v = v.replace("postgres://", "postgresql+psycopg://", 1)
+            elif v.startswith("postgresql://") and not v.startswith("postgresql+"):
+                v = v.replace("postgresql://", "postgresql+psycopg://", 1)
         return v
 
     @field_validator("DATABASE_URL")
     @classmethod
     def validate_production_database(cls, v: str, info) -> str:
         env = info.data.get("ENVIRONMENT", "development")
-        if env == "production" and v.startswith("sqlite"):
+        allow_sqlite = os.getenv("ALLOW_SQLITE_IN_PRODUCTION", "false").lower() in ("true", "1")
+        if env == "production" and v.startswith("sqlite") and not allow_sqlite:
             raise ValueError(
-                "Production startup aborted: SQLite cannot be used as the production database. "
-                "PostgreSQL must be used (e.g., postgresql+psycopg://USER:PASSWORD@db:5432/DATABASE)."
+                "Production startup aborted: SQLite cannot be used as the production database on persistent workloads. "
+                "PostgreSQL must be used (e.g., postgresql+psycopg://USER:PASSWORD@HOST:PORT/DATABASE). "
+                "If running a temporary demo/test on Render with SQLite, set ALLOW_SQLITE_IN_PRODUCTION=true."
             )
         return v
 

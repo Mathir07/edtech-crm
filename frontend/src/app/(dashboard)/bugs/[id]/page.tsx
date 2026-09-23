@@ -160,22 +160,7 @@ export default function BugDetailPage({ params }: { params: Promise<{ id: string
 
   const handleDownload = async (attachmentId: string, filename: string) => {
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("crm_access_token") : null;
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-      const resp = await fetch(`${apiBase}/bugs/${bugId}/attachments/${attachmentId}/download`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!resp.ok) throw new Error("Download failed");
-
-      const blob = await resp.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      await api.downloadFile(`/bugs/${bugId}/attachments/${attachmentId}/download`, filename);
     } catch (err: any) {
       toast.error(err.message || "Failed to download attachment");
     }

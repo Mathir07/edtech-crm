@@ -92,6 +92,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Liveness Check
+@app.get("/health", tags=["Health"])
 @app.get("/api/health", tags=["Health"])
 def health_check():
     return {
@@ -101,6 +102,7 @@ def health_check():
     }
 
 # Readiness Check (Verifies database connectivity)
+@app.get("/health/readiness", tags=["Health"])
 @app.get("/api/health/readiness", tags=["Health"])
 def readiness_check():
     try:

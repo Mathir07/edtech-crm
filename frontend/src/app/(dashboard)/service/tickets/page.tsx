@@ -247,11 +247,14 @@ export default function TicketsListPage() {
     }
   };
 
-  const handleExportCSV = () => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("crm_access_token") : "";
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
-    const url = `${apiBase}/service/export?token=${token}`;
-    window.open(url, "_blank");
+  const handleExportCSV = async () => {
+    try {
+      const filename = `service_tickets_${new Date().toISOString().slice(0, 10)}.csv`;
+      await api.downloadFile("/service/export", filename);
+    } catch (err: any) {
+      console.error("Failed to export tickets CSV:", err);
+      setErrorMessage(err?.message || "Failed to export tickets CSV.");
+    }
   };
 
   const activeCount = tickets.filter((t) => !["RESOLVED", "CLOSED", "CANCELLED"].includes(t.status)).length;

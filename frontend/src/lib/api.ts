@@ -1,4 +1,12 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "/api/v1").replace(/\/+$/, "");
+
+export function getFullApiUrl(endpoint: string): string {
+  if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
+    return endpoint;
+  }
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return `${API_BASE}${cleanEndpoint}`;
+}
 
 export interface ApiError {
   detail: string;
@@ -20,7 +28,7 @@ class ApiClient {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
+    const url = getFullApiUrl(endpoint);
     const headers = { ...this.getHeaders(), ...options.headers };
 
     try {
@@ -86,7 +94,7 @@ class ApiClient {
   }
 
   async upload<T>(endpoint: string, formData: FormData): Promise<T> {
-    const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
+    const url = getFullApiUrl(endpoint);
     const headers: Record<string, string> = {};
     if (typeof window !== "undefined") {
       const token = localStorage.getItem("crm_access_token");
@@ -124,7 +132,7 @@ class ApiClient {
   }
 
   async download(endpoint: string): Promise<Blob> {
-    const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
+    const url = getFullApiUrl(endpoint);
     const headers = { ...this.getHeaders() };
     const response = await fetch(url, { method: "GET", headers });
     if (!response.ok) {
@@ -132,6 +140,45 @@ class ApiClient {
       throw new Error(errorBody.detail || `Export failed with status ${response.status}`);
     }
     return await response.blob();
+  }
+
+  async downloadFile(endpoint: string, fallbackFilename?: string): Promise<void> {
+    const url = getFullApiUrl(endpoint);
+    const headers = { ...this.getHeaders() };
+    const response = await fetch(url, { method: "GET", headers });
+
+    if (response.status === 401) {
+      if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
+        localStorage.removeItem("crm_access_token");
+        localStorage.removeItem("crm_refresh_token");
+        localStorage.removeItem("crm_user");
+        window.location.href = "/login";
+      }
+    }
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({ detail: "Download failed." }));
+      throw new Error(errorBody.detail || `Download failed with status ${response.status}`);
+    }
+
+    let filename = fallbackFilename || "download";
+    const disposition = response.headers.get("Content-Disposition");
+    if (disposition && disposition.includes("filename=")) {
+      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (match && match[1]) {
+        filename = match[1].replace(/['"]/g, "").trim();
+      }
+    }
+
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(blobUrl);
   }
 }
 

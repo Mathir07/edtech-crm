@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: kct-crm-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PROJECT_NAME
+        value: Kiwi Cloud Tech CRM
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://crm.kiwicloudtech.co.in
+      - key: BACKEND_CORS_ORIGINS
+        value: https://crm.kiwicloudtech.co.in
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: AI_PROVIDER
+        value: mock

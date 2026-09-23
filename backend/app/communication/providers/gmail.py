@@ -11,7 +11,12 @@ from app.communication.providers.base import EmailProvider
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/communication/email/oauth/callback")
+_DEFAULT_REDIRECT = (
+    "https://api.crm.kiwicloudtech.co.in/api/v1/communication/email/oauth/callback"
+    if os.getenv("ENVIRONMENT") == "production"
+    else "http://localhost:8000/api/v1/communication/email/oauth/callback"
+)
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", _DEFAULT_REDIRECT)
 
 GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
