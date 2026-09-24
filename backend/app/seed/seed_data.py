@@ -380,6 +380,7 @@ def seed():
         print("Seeding default system users...")
         default_pw = get_password_hash("Admin@123")
         users_data = [
+            ("admin@kiwicloudtech.co.in", "Kiwi", "Administrator", "Super Admin", True, True),
             ("admin@edtechcrm.com", "System", "Administrator", "Super Admin", True, True),
             ("sales.manager@edtechcrm.com", "Arun", "Kumar", "Sales Manager", False, False),
             ("sales.exec@edtechcrm.com", "Sneha", "Raman", "Sales Executive", False, False),
@@ -423,6 +424,10 @@ def seed():
                 )
                 user.roles = [role_objs[rname]]
                 db.add(user)
+                db.flush()
+            else:
+                user.hashed_password = default_pw
+                user.is_active = True
                 db.flush()
             user_objs[email] = user
 

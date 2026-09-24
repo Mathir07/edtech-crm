@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ArrowRight, ShieldCheck, Lock, Mail, AlertCircle } from "lucide-react";
+import { ArrowRight, Lock, Mail, AlertCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -16,7 +16,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email.trim(), password);
     } catch (err: any) {
       setError(err.message || "Failed to sign in. Please verify your credentials.");
     } finally {
@@ -112,30 +112,42 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setDemoUser("admin@edtechcrm.com")}
-                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 rounded-md border border-slate-700 transition-colors text-center truncate"
-                title="Super Admin (Full Access)"
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md border transition-all text-center truncate ${
+                  email === "admin@edtechcrm.com" || email === "admin@kiwicloudtech.co.in"
+                    ? "bg-indigo-600/30 border-indigo-500 text-indigo-300 ring-1 ring-indigo-500/50"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
+                }`}
+                title="Super Admin (admin@edtechcrm.com)"
               >
                 Super Admin
               </button>
               <button
                 type="button"
                 onClick={() => setDemoUser("sales.manager@edtechcrm.com")}
-                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 rounded-md border border-slate-700 transition-colors text-center truncate"
-                title="Sales Manager"
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md border transition-all text-center truncate ${
+                  email === "sales.manager@edtechcrm.com"
+                    ? "bg-indigo-600/30 border-indigo-500 text-indigo-300 ring-1 ring-indigo-500/50"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
+                }`}
+                title="Sales Manager (sales.manager@edtechcrm.com)"
               >
                 Sales Mgr
               </button>
               <button
                 type="button"
                 onClick={() => setDemoUser("sales.exec@edtechcrm.com")}
-                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 rounded-md border border-slate-700 transition-colors text-center truncate"
-                title="Sales Executive"
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md border transition-all text-center truncate ${
+                  email === "sales.exec@edtechcrm.com"
+                    ? "bg-indigo-600/30 border-indigo-500 text-indigo-300 ring-1 ring-indigo-500/50"
+                    : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
+                }`}
+                title="Sales Executive (sales.exec@edtechcrm.com)"
               >
                 Sales Exec
               </button>
             </div>
-            <div className="mt-2 text-3xs text-slate-300 text-center font-mono">
-              Default password: Admin@123
+            <div className="mt-2 text-3xs text-slate-400 text-center font-mono">
+              Default password: <span className="text-indigo-400 font-semibold">Admin@123</span>
             </div>
           </div>
         </div>
