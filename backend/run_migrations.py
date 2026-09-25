@@ -54,7 +54,25 @@ def run_migrations():
                 clean_transactional_data()
                 print("Pristine master database initialized with working login credentials.")
             else:
-                print(f"Database already contains {user_count} users. Skipping initial seed.")
+                print(f"Database already contains {user_count} users. Verifying superuser accounts...")
+                vinoth = db.query(User).filter(User.email == "vinothravi2819@gmail.com").first()
+                if not vinoth:
+                    from app.core.security import get_password_hash
+                    from app.users.models import Role
+                    admin_role = db.query(Role).filter(Role.name == "Super Admin").first()
+                    vinoth = User(
+                        email="vinothravi2819@gmail.com",
+                        hashed_password=get_password_hash("Admin@123"),
+                        first_name="Vinoth",
+                        last_name="Ravi",
+                        is_active=True,
+                        is_superuser=True,
+                    )
+                    if admin_role:
+                        vinoth.roles = [admin_role]
+                    db.add(vinoth)
+                    db.commit()
+                    print("Created missing Super Admin: vinothravi2819@gmail.com")
         except Exception as seed_err:
             print(f"Warning: Error during initial seed check: {seed_err}")
 

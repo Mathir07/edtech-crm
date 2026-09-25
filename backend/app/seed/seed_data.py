@@ -383,6 +383,7 @@ def seed():
         default_pw = get_password_hash("Admin@123")
         users_data = [
             ("admin@edtechcrm.com", "System", "Administrator", "Super Admin", True, True),
+            ("vinothravi2819@gmail.com", "Vinoth", "Ravi", "Super Admin", True, True),
             ("sales.manager@edtechcrm.com", "Arun", "Kumar", "Sales Manager", False, False),
             ("sales.exec@edtechcrm.com", "Sneha", "Raman", "Sales Executive", False, False),
             ("pm@edtechcrm.com", "Vikram", "Menon", "Project Manager", False, False),
