@@ -1,7 +1,7 @@
 databases:
   - name: edtech-crm-db
     databaseName: edtech_crm
-    user: postgres
+    user: edtech_crm
     plan: free
     region: oregon
     postgresMajorVersion: 16
