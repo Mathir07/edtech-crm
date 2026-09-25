@@ -36,5 +36,27 @@ def run_migrations():
         command.upgrade(alembic_cfg, "head")
         print("Database migrations applied successfully!")
 
+        # Seed master users, roles, and configuration if empty
+        try:
+            from app.core.database import SessionLocal
+            from app.users.models import User
+            from app.seed.seed_data import seed
+            from scripts.clean_test_data import clean_transactional_data
+
+            db = SessionLocal()
+            user_count = db.query(User).count()
+            db.close()
+
+            if user_count == 0:
+                print("Database has no users. Seeding master system roles, permissions, and users...")
+                seed()
+                print("Purging mock test records to ensure clean transactional database...")
+                clean_transactional_data()
+                print("Pristine master database initialized with working login credentials.")
+            else:
+                print(f"Database already contains {user_count} users. Skipping initial seed.")
+        except Exception as seed_err:
+            print(f"Warning: Error during initial seed check: {seed_err}")
+
 if __name__ == "__main__":
     run_migrations()
