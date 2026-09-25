@@ -162,13 +162,9 @@ export default function FinancialReportsPage() {
     fetchReport();
   }, [activeTab, asOfDate, startDate, endDate]);
 
-  const handleExportCsv = async () => {
-    try {
-      const filename = `trial_balance_${asOfDate || new Date().toISOString().slice(0, 10)}.csv`;
-      await api.downloadFile(`/accounting/export/trial-balance?as_of_date=${asOfDate}`, filename);
-    } catch (err: any) {
-      setError(err?.message || "Failed to export trial balance CSV.");
-    }
+  const handleExportCsv = () => {
+    const API_BASE = api.getApiBase();
+    window.open(`${API_BASE}/accounting/export/trial-balance?as_of_date=${asOfDate}`, "_blank");
   };
 
   return (

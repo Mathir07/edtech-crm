@@ -28,6 +28,12 @@ from app.sales.schemas import (
 from app.sales.calculations import (
     calculate_line_item, calculate_financial_totals, generate_sequential_number, round_curr
 )
+from app.notifications.dispatcher import (
+    notify_quotation_submitted,
+    notify_quotation_approved,
+    notify_quotation_rejected,
+)
+from app.reports.export import generate_csv_response
 
 router = APIRouter()
 
@@ -266,6 +272,79 @@ def move_opportunity_stage(
     db.refresh(opp)
 
     return format_opportunity_response(opp)
+
+@router.get("/opportunities/export")
+def export_opportunities(
+    pipeline_id: Optional[str] = None,
+    stage_id: Optional[str] = None,
+    status: Optional[str] = None,
+    owner_id: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("crm.opportunities.view")),
+):
+    query = db.query(Opportunity).filter(Opportunity.is_deleted == False)
+    if pipeline_id:
+        query = query.filter(Opportunity.pipeline_id == pipeline_id)
+    if stage_id:
+        query = query.filter(Opportunity.stage_id == stage_id)
+    if status:
+        query = query.filter(Opportunity.status == status)
+    if owner_id:
+        query = query.filter(Opportunity.owner_id == owner_id)
+    if search:
+        s = f"%{search}%"
+        query = query.filter(
+            (Opportunity.title.ilike(s)) |
+            (Opportunity.college_name.ilike(s))
+        )
+
+    opps = query.order_by(Opportunity.created_at.desc()).all()
+
+    headers = [
+        "Opportunity Title",
+        "Company / College",
+        "Contact",
+        "Pipeline",
+        "Stage",
+        "Value (INR)",
+        "Probability (%)",
+        "Expected Close Date",
+        "Status",
+        "Owner",
+        "Created At",
+    ]
+
+    rows = []
+    for o in opps:
+        company_name = o.college_name or (o.company.organization_name if o.company else "")
+        contact_name = o.contact.name if o.contact else ""
+        pipeline_name = o.pipeline.name if o.pipeline else ""
+        stage_name = o.stage.name if o.stage else ""
+        owner_name = o.owner.full_name if o.owner else ""
+        close_dt = o.expected_close_date.strftime("%Y-%m-%d") if o.expected_close_date else ""
+        created_dt = o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else ""
+
+        rows.append([
+            o.title or "",
+            company_name,
+            contact_name,
+            pipeline_name,
+            stage_name,
+            f"{float(o.value):.2f}" if o.value is not None else "0.00",
+            o.probability or 0,
+            close_dt,
+            o.status or "",
+            owner_name,
+            created_dt,
+        ])
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return generate_csv_response(
+        filename=f"opportunities_export_{timestamp}.csv",
+        headers=headers,
+        rows=rows,
+    )
 
 @router.delete("/opportunities/{opp_id}")
 def delete_opportunity(
@@ -768,6 +847,7 @@ def submit_quotation_for_approval(
         user_email=current_user.email,
         request=request,
     )
+    notify_quotation_submitted(db, quote, current_user)
     db.commit()
     db.refresh(quote)
     return _format_quotation_response(quote)
@@ -798,6 +878,7 @@ def approve_quotation(
         user_email=current_user.email,
         request=request,
     )
+    notify_quotation_approved(db, quote, current_user)
     db.commit()
     db.refresh(quote)
     return _format_quotation_response(quote)
@@ -827,6 +908,7 @@ def reject_quotation(
         new_values={"reason": reason},
         request=request,
     )
+    notify_quotation_rejected(db, quote, current_user, reason)
     db.commit()
     db.refresh(quote)
     return _format_quotation_response(quote)

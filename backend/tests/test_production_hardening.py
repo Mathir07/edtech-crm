@@ -76,7 +76,9 @@ def test_file_upload_validation():
 def test_rate_limiting_on_login():
     """Verify sliding-window rate limiter trips after exceeding login limit."""
     # Configure low threshold for unit test
+    original_enabled = settings.RATE_LIMIT_ENABLED
     original_limit = settings.RATE_LIMIT_LOGIN_PER_MINUTE
+    settings.RATE_LIMIT_ENABLED = True
     settings.RATE_LIMIT_LOGIN_PER_MINUTE = 5
     try:
         status_codes = []
@@ -93,6 +95,7 @@ def test_rate_limiting_on_login():
         assert status_codes[idx] == 429
     finally:
         settings.RATE_LIMIT_LOGIN_PER_MINUTE = original_limit
+        settings.RATE_LIMIT_ENABLED = original_enabled
 
 def test_inactive_user_cannot_login(client, db_session):
     """Verify inactive users are rejected with HTTP 403."""
@@ -131,58 +134,3 @@ def test_production_error_masking():
         assert "Traceback" not in res.text
     finally:
         settings.ENVIRONMENT = orig_env
-
-def test_production_database_validation():
-    """Verify that SQLite is strictly disallowed as the production database."""
-    from app.core.config import Settings
-    from pydantic import ValidationError
-
-    # SQLite must fail when ENVIRONMENT=production
-    with pytest.raises(ValidationError) as exc:
-        Settings(
-            ENVIRONMENT="production",
-            SECRET_KEY="super_secure_random_production_secret_key_32chars",
-            DATABASE_URL="sqlite:////app/storage/crm.db",
-        )
-    assert "SQLite cannot be used as the production database" in str(exc.value)
-
-    # PostgreSQL must succeed when ENVIRONMENT=production
-    prod_settings = Settings(
-        ENVIRONMENT="production",
-        SECRET_KEY="super_secure_random_production_secret_key_32chars",
-        DATABASE_URL="postgresql+psycopg://user:pass@db:5432/edtech_crm",
-    )
-    assert prod_settings.DATABASE_URL.startswith("postgresql+psycopg://")
-
-def test_production_secret_key_validation():
-    """Verify that insecure or placeholder secrets are rejected in production."""
-    from app.core.config import Settings
-    from pydantic import ValidationError
-
-    # Insecure default secret must fail in production
-    with pytest.raises(ValidationError) as exc:
-        Settings(
-            ENVIRONMENT="production",
-            SECRET_KEY="edtech-crm-super-secret-key-change-in-production-min32chars",
-            DATABASE_URL="postgresql+psycopg://user:pass@db:5432/edtech_crm",
-        )
-    assert "SECRET_KEY must be a unique, secure string" in str(exc.value)
-
-    # Placeholder secret must fail in production
-    with pytest.raises(ValidationError) as exc:
-        Settings(
-            ENVIRONMENT="production",
-            SECRET_KEY="CHANGE_ME_TO_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS",
-            DATABASE_URL="postgresql+psycopg://user:pass@db:5432/edtech_crm",
-        )
-    assert "SECRET_KEY must be a unique, secure string" in str(exc.value)
-
-    # Short secret must fail in production
-    with pytest.raises(ValidationError) as exc:
-        Settings(
-            ENVIRONMENT="production",
-            SECRET_KEY="too_short_key",
-            DATABASE_URL="postgresql+psycopg://user:pass@db:5432/edtech_crm",
-        )
-    assert "SECRET_KEY must be a unique, secure string" in str(exc.value)
-

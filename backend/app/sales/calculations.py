@@ -1,6 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timezone
 from typing import List, Dict, Any
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.sales.models import NumberSequence
 
@@ -125,10 +126,40 @@ def generate_sequential_number(db: Session, entity_type: str, prefix: str) -> st
         )
         db.add(seq)
         db.flush()
-        val = 1
     else:
         seq.current_val += 1
         db.flush()
-        val = seq.current_val
 
-    return f"{prefix}-{current_year}-{val:04d}"
+    table_col_map = {
+        "quotation": ("quotations", "quotation_number"),
+        "contract": ("contracts", "contract_number"),
+        "sales_order": ("sales_orders", "order_number"),
+        "project": ("projects", "project_number"),
+        "task": ("project_tasks", "task_number"),
+        "test_case": ("test_cases", "test_case_number"),
+        "bug": ("bugs", "bug_number"),
+        "ticket": ("tickets", "ticket_number"),
+        "journal_entry": ("journal_entries", "entry_number"),
+        "invoice": ("invoices", "invoice_number"),
+        "payment": ("customer_payments", "payment_number"),
+        "bill": ("bills", "bill_number"),
+        "vendor_payment": ("vendor_payments", "payment_number"),
+        "expense": ("expenses", "expense_number"),
+    }
+
+    table_info = table_col_map.get(entity_type)
+    while True:
+        candidate = f"{prefix}-{current_year}-{seq.current_val:04d}"
+        if table_info:
+            tbl, col = table_info
+            try:
+                exists = db.execute(text(f"SELECT 1 FROM {tbl} WHERE {col} = :c"), {"c": candidate}).first()
+                if exists:
+                    seq.current_val += 1
+                    db.flush()
+                    continue
+            except Exception:
+                pass
+        break
+
+    return candidate

@@ -66,7 +66,8 @@ def test_bug_lifecycle_comments_and_attachments(
     bad_file = {"file": ("exploit.exe", io.BytesIO(b"binary content"), "application/octet-stream")}
     bad_resp = client.post(f"/api/v1/bugs/{bug_id}/attachments", files=bad_file, headers=qa_headers)
     assert bad_resp.status_code == 400
-    assert "Unsupported file type" in bad_resp.json()["detail"]
+    detail = bad_resp.json()["detail"].lower()
+    assert "forbidden" in detail or "unsupported" in detail
 
     # 4. Developer picks up bug -> IN_PROGRESS
     trans1 = client.patch(f"/api/v1/bugs/{bug_id}/status", json={

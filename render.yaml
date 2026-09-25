@@ -1,27 +1,39 @@
+databases:
+  - name: edtech-crm-db
+    databaseName: edtech_crm
+    user: postgres
+    plan: free
+    region: oregon
+    postgresMajorVersion: 16
+
 services:
   - type: web
-    name: kct-crm-backend
+    name: edtech-crm-backend
     runtime: python
     rootDir: backend
     plan: free
     region: oregon
     buildCommand: pip install -r requirements.txt
     startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    healthCheckPath: /api/health
     envVars:
       - key: ENVIRONMENT
         value: production
       - key: PROJECT_NAME
-        value: Kiwi Cloud Tech CRM
+        value: EdTech Enterprise CRM
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        sync: false
-      - key: CORS_ORIGINS
-        value: https://crm.kiwicloudtech.co.in
+        fromDatabase:
+          name: edtech-crm-db
+          property: connectionString
       - key: BACKEND_CORS_ORIGINS
-        value: https://crm.kiwicloudtech.co.in
+        value: "https://edtech-crm-frontend.vercel.app"
       - key: RATE_LIMIT_ENABLED
         value: "true"
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "10"
       - key: AI_PROVIDER
         value: mock

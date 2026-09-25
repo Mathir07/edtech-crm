@@ -17,6 +17,10 @@ import {
   CheckCircle2,
   Layers,
   ChevronDown,
+  GripVertical,
+  Download,
+  Sparkles,
+  Move,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -25,6 +29,7 @@ import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
+import { exportToCsv } from "@/lib/exportCsv";
 
 interface PipelineStage {
   id: string;
@@ -72,6 +77,8 @@ export default function PipelinePage() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"kanban" | "table">("kanban");
   const [movingOppId, setMovingOppId] = useState<string | null>(null);
+  const [draggedOppId, setDraggedOppId] = useState<string | null>(null);
+  const [dragOverStageId, setDragOverStageId] = useState<string | null>(null);
   const { hasPermission } = useAuth();
   const { success, error: toastError } = useToast();
 
@@ -145,17 +152,75 @@ export default function PipelinePage() {
     }
   };
 
+  const activePipeline = pipelines.find((p) => p.id === selectedPipelineId) || pipelines[0];
+  const stages = activePipeline?.stages ? [...activePipeline.stages].sort((a, b) => a.order - b.order) : [];
+
   const handleStageMove = async (oppId: string, targetStageId: string) => {
+    const opp = opportunities.find((o) => o.id === oppId);
+    if (!opp || opp.stage_id === targetStageId) return;
+
+    const targetStage = stages.find((s) => s.id === targetStageId);
+    const prevOpps = [...opportunities];
+
+    // Optimistic update for zero-latency drag-and-drop feedback
+    setOpportunities((prev) =>
+      prev.map((o) =>
+        o.id === oppId
+          ? {
+              ...o,
+              stage_id: targetStageId,
+              probability: targetStage ? targetStage.probability : o.probability,
+            }
+          : o
+      )
+    );
+
     try {
       setMovingOppId(oppId);
       await api.patch(`/opportunities/${oppId}/stage`, { stage_id: targetStageId });
-      success("Pipeline stage updated successfully.");
+      success(`Deal moved to "${targetStage?.name || "stage"}"`);
       const updatedOpps = await api.get<Opportunity[]>(`/opportunities?pipeline_id=${selectedPipelineId}`);
       setOpportunities(updatedOpps);
     } catch (err: any) {
-      toastError(err.detail || "Failed to update pipeline stage.");
+      setOpportunities(prevOpps);
+      toastError(err.detail || "Failed to update pipeline stage. Reverted.");
     } finally {
       setMovingOppId(null);
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, oppId: string) => {
+    e.dataTransfer.setData("text/plain", oppId);
+    e.dataTransfer.effectAllowed = "move";
+    setDraggedOppId(oppId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedOppId(null);
+    setDragOverStageId(null);
+  };
+
+  const handleDragOverColumn = (e: React.DragEvent, stageId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverStageId !== stageId) {
+      setDragOverStageId(stageId);
+    }
+  };
+
+  const handleDragLeaveColumn = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverStageId(null);
+    }
+  };
+
+  const handleDropColumn = (e: React.DragEvent, stageId: string) => {
+    e.preventDefault();
+    const oppId = e.dataTransfer.getData("text/plain") || draggedOppId;
+    setDragOverStageId(null);
+    setDraggedOppId(null);
+    if (oppId) {
+      handleStageMove(oppId, stageId);
     }
   };
 
@@ -185,7 +250,57 @@ export default function PipelinePage() {
     }
   };
 
-  const activePipeline = pipelines.find((p) => p.id === selectedPipelineId) || pipelines[0];
+  // Filter opps by search
+  const filteredOpps = opportunities.filter((o) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (
+      o.title.toLowerCase().includes(s) ||
+      (o.college_name && o.college_name.toLowerCase().includes(s))
+    );
+  });
+
+  const totalPipelineVal = filteredOpps.reduce((sum, o) => sum + (Number(o.value) || 0), 0);
+  const wonDealsCount = filteredOpps.filter((o) => o.status === "Won").length;
+  const activeDealsCount = filteredOpps.filter((o) => o.status !== "Lost").length;
+
+  const handleExportPipeline = () => {
+    if (!filteredOpps.length) {
+      toastError("No deals found to export in this pipeline.");
+      return;
+    }
+    const headers = [
+      "Deal Title",
+      "Account / Company",
+      "Business Pipeline",
+      "Stage",
+      "Value (INR)",
+      "Probability (%)",
+      "Owner",
+      "Expected Close Date",
+      "Status",
+    ];
+    const rows = filteredOpps.map((opp) => {
+      const stg = stages.find((s) => s.id === opp.stage_id);
+      return [
+        opp.title,
+        opp.college_name || "Institution",
+        activePipeline?.name || "Pipeline",
+        stg?.name || "Stage",
+        opp.value,
+        opp.probability,
+        opp.owner_name || "Team",
+        opp.expected_close_date || "",
+        opp.status || "Open",
+      ];
+    });
+    exportToCsv(
+      `${(activePipeline?.name || "pipeline").toLowerCase().replace(/[^a-z0-9]/g, "_")}_deals`,
+      headers,
+      rows
+    );
+    success(`Exported ${filteredOpps.length} deals to CSV`);
+  };
 
   if (loading) {
     return <div className="p-12 text-center text-sm text-slate-500 dark:text-slate-400">Loading sales pipelines...</div>;
@@ -199,21 +314,6 @@ export default function PipelinePage() {
       />
     );
   }
-
-  // Filter opps by search
-  const filteredOpps = opportunities.filter((o) => {
-    if (!search) return true;
-    const s = search.toLowerCase();
-    return (
-      o.title.toLowerCase().includes(s) ||
-      (o.college_name && o.college_name.toLowerCase().includes(s))
-    );
-  });
-
-  const stages = [...activePipeline.stages].sort((a, b) => a.order - b.order);
-  const totalPipelineVal = filteredOpps.reduce((sum, o) => sum + (Number(o.value) || 0), 0);
-  const wonDealsCount = filteredOpps.filter((o) => o.status === "Won").length;
-  const activeDealsCount = filteredOpps.filter((o) => o.status !== "Lost").length;
 
   // Stages available for the modal's selected pipeline
   const modalPipeline = pipelines.find((p) => p.id === createForm.pipeline_id) || activePipeline;
@@ -261,6 +361,16 @@ export default function PipelinePage() {
               <span className="hidden sm:inline">List</span>
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportPipeline}
+            className="inline-flex items-center px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl shadow-2xs transition-colors"
+            title="Export deals in active pipeline to CSV"
+          >
+            <Download className="w-4 h-4 mr-1.5 text-indigo-500" />
+            <span>Export CSV</span>
+          </button>
 
           {hasPermission("crm.opportunities.create") && (
             <button
@@ -335,35 +445,54 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      {/* Filter / Search Bar */}
-      <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center max-w-md">
-        <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 mr-2 shrink-0" />
-        <input
-          type="text"
-          placeholder={`Filter ${activePipeline.name} deals by title or account...`}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-hidden bg-transparent"
-        />
+      {/* Filter / Search Bar & Drag Guidance */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center max-w-md w-full">
+          <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 mr-2 shrink-0" />
+          <input
+            type="text"
+            placeholder={`Filter ${activePipeline.name} deals by title or account...`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-hidden bg-transparent"
+          />
+        </div>
+
+        {viewMode === "kanban" && (
+          <div className="flex items-center space-x-2 text-2xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 px-3.5 py-2 rounded-xl shadow-2xs">
+            <Move className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <span>Fluid Drag &amp; Drop enabled: Pick up any card to reassign across stages</span>
+          </div>
+        )}
       </div>
 
-      {/* 1. KANBAN BOARD VIEW */}
+      {/* 1. KANBAN BOARD VIEW (HTML5 Drag-and-Drop) */}
       {viewMode === "kanban" && (
         <div className="flex space-x-4 overflow-x-auto pb-6 min-h-[650px] scrollbar-thin">
           {stages.map((stg, stgIdx) => {
             const stageOpps = filteredOpps.filter((o) => o.stage_id === stg.id);
             const stageTotal = stageOpps.reduce((acc, o) => acc + (Number(o.value) || 0), 0);
+            const isDragOver = dragOverStageId === stg.id;
 
             return (
               <div
                 key={stg.id}
-                className="w-80 shrink-0 bg-slate-100/70 dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-3.5 flex flex-col shadow-2xs"
+                onDragOver={(e) => handleDragOverColumn(e, stg.id)}
+                onDragLeave={handleDragLeaveColumn}
+                onDrop={(e) => handleDropColumn(e, stg.id)}
+                className={`w-80 shrink-0 rounded-2xl border p-3.5 flex flex-col shadow-2xs transition-all duration-200 ${
+                  isDragOver
+                    ? "ring-2 ring-indigo-500 bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-600 scale-[1.01]"
+                    : "bg-slate-100/70 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800"
+                }`}
               >
                 {/* Column Header */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200/70 dark:border-slate-800 mb-3">
                   <div className="flex items-center space-x-2">
                     <span
-                      className="w-3 h-3 rounded-full shrink-0"
+                      className={`w-3 h-3 rounded-full shrink-0 transition-transform ${
+                        isDragOver ? "scale-125 ring-2 ring-indigo-400" : ""
+                      }`}
                       style={{ backgroundColor: stg.color || "#4f46e5" }}
                     />
                     <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate max-w-[170px] uppercase tracking-wide">
@@ -379,84 +508,117 @@ export default function PipelinePage() {
                 </div>
 
                 {/* Opportunity Cards List */}
-                <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-                  {stageOpps.length === 0 ? (
+                <div className="flex-1 space-y-3 overflow-y-auto pr-1 min-h-[140px]">
+                  {/* Drop zone placeholder when dragging a card over this column */}
+                  {isDragOver && draggedOppId && !stageOpps.some((o) => o.id === draggedOppId) && (
+                    <div className="border-2 border-dashed border-indigo-400 dark:border-indigo-500 bg-indigo-100/60 dark:bg-indigo-900/40 rounded-xl p-3 text-center text-xs font-semibold text-indigo-700 dark:text-indigo-300 animate-pulse flex items-center justify-center space-x-1.5 shadow-inner">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      <span>Drop deal into {stg.name}</span>
+                    </div>
+                  )}
+
+                  {stageOpps.length === 0 && !(isDragOver && draggedOppId) ? (
                     <div className="p-6 text-center text-xs text-slate-400 dark:text-slate-500 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
                       No deals in stage
                     </div>
                   ) : (
-                    stageOpps.map((opp) => (
-                      <div
-                        key={opp.id}
-                        className={`bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-xs hover:shadow-md transition-all space-y-3 ${
-                          movingOppId === opp.id ? "opacity-40 animate-pulse" : ""
-                        }`}
-                      >
-                        <div>
-                          <Link
-                            href={`/opportunities/${opp.id}`}
-                            className="font-bold text-slate-900 dark:text-slate-100 text-sm hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors line-clamp-2"
-                          >
-                            {opp.title}
-                          </Link>
-                          <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            <Building2 className="w-3 h-3 mr-1 text-slate-400 dark:text-slate-500 shrink-0" />
-                            <span className="truncate">{opp.college_name || "Institution"}</span>
+                    stageOpps.map((opp) => {
+                      const isDragging = draggedOppId === opp.id;
+                      const canEdit = hasPermission("crm.opportunities.edit");
+
+                      return (
+                        <div
+                          key={opp.id}
+                          draggable={canEdit}
+                          onDragStart={(e) => canEdit && handleDragStart(e, opp.id)}
+                          onDragEnd={handleDragEnd}
+                          className={`group bg-white dark:bg-slate-900 rounded-xl p-4 border shadow-xs transition-all space-y-3 select-none ${
+                            isDragging
+                              ? "opacity-30 scale-95 border-indigo-500 border-dashed ring-2 ring-indigo-400"
+                              : canEdit
+                              ? "cursor-grab active:cursor-grabbing hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md"
+                              : "border-slate-200 dark:border-slate-800"
+                          } ${movingOppId === opp.id ? "opacity-50 animate-pulse" : ""}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <Link
+                                href={`/opportunities/${opp.id}`}
+                                onClick={(e) => {
+                                  if (draggedOppId) e.preventDefault();
+                                }}
+                                className="font-bold text-slate-900 dark:text-slate-100 text-sm hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors line-clamp-2"
+                              >
+                                {opp.title}
+                              </Link>
+                              <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                <Building2 className="w-3 h-3 mr-1 text-slate-400 dark:text-slate-500 shrink-0" />
+                                <span className="truncate">{opp.college_name || "Institution"}</span>
+                              </div>
+                            </div>
+                            {canEdit && (
+                              <div
+                                title="Drag deal across stages"
+                                className="text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors p-0.5 rounded cursor-grab active:cursor-grabbing shrink-0"
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </div>
+                            )}
                           </div>
-                        </div>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
-                          <span className="font-bold text-slate-900 dark:text-slate-100 text-sm font-mono">
-                            {formatCurrency(opp.value)}
-                          </span>
-                          <span className="text-2xs font-semibold px-2 py-0.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
-                            {opp.probability}% Prob
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between text-2xs text-slate-400 dark:text-slate-500">
-                          <span>Owner: {opp.owner_name?.split(" ")?.[0] || "Team"}</span>
-                          {opp.expected_close_date && <span>Close: {formatDate(opp.expected_close_date)}</span>}
-                        </div>
-
-                        {/* Stage Movement Controls */}
-                        {hasPermission("crm.opportunities.edit") && (
-                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                            <button
-                              type="button"
-                              disabled={stgIdx === 0}
-                              onClick={() => handleStageMove(opp.id, stages[stgIdx - 1].id)}
-                              className="p-1 rounded text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-20 disabled:hover:bg-transparent"
-                              title="Move back a stage"
-                            >
-                              <ArrowLeft className="w-3.5 h-3.5" />
-                            </button>
-
-                            <select
-                              value={opp.stage_id}
-                              onChange={(e) => handleStageMove(opp.id, e.target.value)}
-                              className="text-2xs font-medium text-slate-600 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 max-w-[130px]"
-                            >
-                              {stages.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name}
-                                </option>
-                              ))}
-                            </select>
-
-                            <button
-                              type="button"
-                              disabled={stgIdx === stages.length - 1}
-                              onClick={() => handleStageMove(opp.id, stages[stgIdx + 1].id)}
-                              className="p-1 rounded text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-20 disabled:hover:bg-transparent"
-                              title="Move forward a stage"
-                            >
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
+                            <span className="font-bold text-slate-900 dark:text-slate-100 text-sm font-mono">
+                              {formatCurrency(opp.value)}
+                            </span>
+                            <span className="text-2xs font-semibold px-2 py-0.5 rounded bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+                              {opp.probability}% Prob
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    ))
+
+                          <div className="flex items-center justify-between text-2xs text-slate-400 dark:text-slate-500">
+                            <span>Owner: {opp.owner_name?.split(" ")?.[0] || "Team"}</span>
+                            {opp.expected_close_date && <span>Close: {formatDate(opp.expected_close_date)}</span>}
+                          </div>
+
+                          {/* Stage Movement Controls (Keyboard / Mobile fallback) */}
+                          {canEdit && (
+                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                              <button
+                                type="button"
+                                disabled={stgIdx === 0}
+                                onClick={() => handleStageMove(opp.id, stages[stgIdx - 1].id)}
+                                className="p-1 rounded text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-20 disabled:hover:bg-transparent"
+                                title="Move back a stage"
+                              >
+                                <ArrowLeft className="w-3.5 h-3.5" />
+                              </button>
+
+                              <select
+                                value={opp.stage_id}
+                                onChange={(e) => handleStageMove(opp.id, e.target.value)}
+                                className="text-2xs font-medium text-slate-600 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 max-w-[130px]"
+                              >
+                                {stages.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <button
+                                type="button"
+                                disabled={stgIdx === stages.length - 1}
+                                onClick={() => handleStageMove(opp.id, stages[stgIdx + 1].id)}
+                                className="p-1 rounded text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-20 disabled:hover:bg-transparent"
+                                title="Move forward a stage"
+                              >
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>

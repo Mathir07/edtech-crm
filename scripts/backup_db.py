@@ -4,8 +4,8 @@ Kiwi Cloud Tech CRM - Database Backup Utility
 Domain: kiwicloudtech.co.in
 
 Supports:
+- Production PostgreSQL 16 backup via pg_dump
 - Local SQLite backup (safe hot copy)
-- Production PostgreSQL backup via pg_dump
 - Timestamped filenames
 - Optional gzip compression
 - Retention cleanup (default: retain 14 latest backups)
@@ -23,6 +23,24 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 BACKUP_DIR = BASE_DIR / "backups"
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def find_tool(tool_name: str) -> str:
+    """Find binary on PATH or common PostgreSQL installation directories."""
+    found = shutil.which(tool_name)
+    if found:
+        return found
+    candidates = [
+        Path(r"D:\Kiwi Project\PostgreSQL\bin") / f"{tool_name}.exe",
+        Path(r"C:\Program Files\PostgreSQL\16\bin") / f"{tool_name}.exe",
+        Path(r"C:\Program Files\PostgreSQL\17\bin") / f"{tool_name}.exe",
+        Path(r"C:\Program Files\PostgreSQL\18\bin") / f"{tool_name}.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return tool_name
+
 
 def backup_sqlite(db_path: Path, retention_days: int = 14) -> Path:
     if not db_path.exists():
@@ -45,12 +63,20 @@ def backup_sqlite(db_path: Path, retention_days: int = 14) -> Path:
     prune_old_backups("crm_sqlite_*.db.gz", retention_days)
     return compressed_file
 
+
 def backup_postgres(pg_url: str, retention_days: int = 14) -> Path:
+    # Normalize URL for pg_dump
+    if pg_url.startswith("postgresql+psycopg://"):
+        pg_url = pg_url.replace("postgresql+psycopg://", "postgresql://", 1)
+    elif pg_url.startswith("postgres://"):
+        pg_url = pg_url.replace("postgres://", "postgresql://", 1)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     compressed_file = BACKUP_DIR / f"crm_postgres_{timestamp}.sql.gz"
 
-    print(f"[*] Running PostgreSQL backup via pg_dump...")
-    cmd = ["pg_dump", "--dbname", pg_url, "--clean", "--if-exists", "--no-owner", "--no-privileges"]
+    pg_dump_bin = find_tool("pg_dump")
+    print(f"[*] Running PostgreSQL backup via {pg_dump_bin}...")
+    cmd = [pg_dump_bin, "--dbname", pg_url, "--clean", "--if-exists", "--no-owner", "--no-privileges"]
     
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -69,8 +95,9 @@ def backup_postgres(pg_url: str, retention_days: int = 14) -> Path:
         prune_old_backups("crm_postgres_*.sql.gz", retention_days)
         return compressed_file
     except FileNotFoundError:
-        print("Error: 'pg_dump' utility not found on PATH. Ensure PostgreSQL client tools are installed.", file=sys.stderr)
+        print("Error: 'pg_dump' utility not found. Ensure PostgreSQL client tools are installed.", file=sys.stderr)
         sys.exit(1)
+
 
 def prune_old_backups(pattern: str, retain_count: int):
     files = sorted(BACKUP_DIR.glob(pattern), key=os.path.getmtime, reverse=True)
@@ -79,25 +106,25 @@ def prune_old_backups(pattern: str, retain_count: int):
             print(f"[*] Pruning old backup: {old_file.name}")
             old_file.unlink()
 
+
 def main():
-    db_url = os.environ.get("DATABASE_URL", "sqlite:///./backend/crm.db")
+    db_url = os.environ.get("DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/edtech_crm")
     if db_url.startswith("sqlite"):
-        # Parse sqlite path
         path_str = db_url.replace("sqlite:///", "").lstrip("./")
         db_path = BASE_DIR / path_str
         if not db_path.exists():
-            # Try backend/crm.db or root crm.db
             candidates = [BASE_DIR / "backend" / "crm.db", BASE_DIR / "crm.db"]
             for c in candidates:
                 if c.exists():
                     db_path = c
                     break
         backup_sqlite(db_path)
-    elif db_url.startswith("postgresql"):
+    elif db_url.startswith(("postgresql", "postgres")):
         backup_postgres(db_url)
     else:
         print(f"Unsupported database URL scheme: {db_url}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

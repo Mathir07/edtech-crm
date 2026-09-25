@@ -471,43 +471,43 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Cols: Operational Work & Follow-ups */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col">
-          <div className="p-5 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+          <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/30">
             <div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center">
-                <Clock className="w-4 h-4 mr-2 text-indigo-600 dark:text-indigo-400" />
+                <Clock className="w-4 h-4 mr-2 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 Operational CRM Work Center
               </h2>
               <p className="text-2xs text-slate-500 dark:text-slate-400 mt-0.5">Scheduled follow-ups, overdue items, and task queues.</p>
             </div>
 
             {/* Scope Tabs */}
-            <div className="flex items-center bg-slate-200/70 dark:bg-slate-800 p-1 rounded-lg text-2xs font-semibold">
+            <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-800 p-1 rounded-xl text-2xs font-semibold overflow-x-auto scrollbar-thin w-full sm:w-auto">
               <button
                 type="button"
                 onClick={() => setActiveTab("today_followups")}
-                className={`px-2.5 py-1 rounded-md transition-all ${
-                  activeTab === "today_followups" ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                className={`flex-1 sm:flex-initial text-center px-3 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                  activeTab === "today_followups" ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
                 }`}
               >
-                Today's Follow-ups ({todayActivities.length})
+                Today's ({todayActivities.length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab("overdue")}
-                className={`px-2.5 py-1 rounded-md transition-all ${
-                  activeTab === "overdue" ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-2xs" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                className={`flex-1 sm:flex-initial text-center px-3 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                  activeTab === "overdue" ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
                 }`}
               >
-                Overdue Actions ({overdueActivities.length})
+                Overdue ({overdueActivities.length})
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab("tasks")}
-                className={`px-2.5 py-1 rounded-md transition-all ${
-                  activeTab === "tasks" ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                className={`flex-1 sm:flex-initial text-center px-3 py-1.5 rounded-lg whitespace-nowrap transition-all ${
+                  activeTab === "tasks" ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
                 }`}
               >
-                Open Tasks ({openTasks.length})
+                Tasks ({openTasks.length})
               </button>
             </div>
           </div>

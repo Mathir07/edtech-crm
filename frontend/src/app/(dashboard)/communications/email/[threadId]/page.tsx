@@ -200,15 +200,15 @@ export default function EmailThreadDetailPage() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {m.attachments.map((att) => (
-                    <button
+                    <a
                       key={att.id}
-                      type="button"
-                      onClick={() => api.downloadFile(`/communications/attachments/${att.id}/download`, att.filename)}
-                      className="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                      href={`/api/v1/communications/attachments/${att.id}/download`}
+                      download
+                      className="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors"
                     >
                       <Download className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                       <span>{att.filename}</span>
-                    </button>
+                    </a>
                   ))}
                 </div>
               </div>

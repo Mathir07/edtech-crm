@@ -17,6 +17,7 @@ from app.crm.schemas import (
     LeadResponse, LeadCreate, LeadUpdate, LeadConvertRequest,
     LeadSourceResponse, LeadSourceCreate,
 )
+from app.notifications.dispatcher import notify_lead_assigned
 
 router = APIRouter()
 
@@ -148,6 +149,10 @@ def create_lead(
         new_values=data.model_dump(mode="json"),
         request=request,
     )
+    if lead.owner_id and lead.owner_id != current_user.id:
+        assignee_u = db.query(User).filter(User.id == lead.owner_id).first()
+        if assignee_u:
+            notify_lead_assigned(db, lead, assignee_u, current_user)
     db.commit()
     db.refresh(lead)
 
@@ -544,6 +549,7 @@ def update_lead(
         raise HTTPException(status_code=404, detail="Lead not found")
 
     old_values = {k: getattr(lead, k) for k in data.model_dump(exclude_unset=True).keys()}
+    old_owner_id = lead.owner_id
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(lead, key, value)
 
@@ -558,6 +564,10 @@ def update_lead(
         new_values=data.model_dump(exclude_unset=True, mode="json"),
         request=request,
     )
+    if lead.owner_id and lead.owner_id != old_owner_id and lead.owner_id != current_user.id:
+        assignee_u = db.query(User).filter(User.id == lead.owner_id).first()
+        if assignee_u:
+            notify_lead_assigned(db, lead, assignee_u, current_user)
     db.commit()
     db.refresh(lead)
 

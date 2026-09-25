@@ -14,11 +14,13 @@ import {
   ArrowRight,
   CheckCircle2,
   Trash2,
+  Download,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/Badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { exportToCsv } from "@/lib/exportCsv";
 import { useToast } from "@/components/ui/Toast";
 
 interface InvoiceListItem {
@@ -34,6 +36,7 @@ interface InvoiceListItem {
   total_amount: number;
   amount_paid: number;
   amount_due: number;
+  currency?: string;
   status: "DRAFT" | "ISSUED" | "PARTIALLY_PAID" | "PAID" | "OVERDUE" | "VOID";
 }
 
@@ -167,6 +170,56 @@ export default function InvoicesListPage() {
 
   const totalOutstanding = filtered.reduce((s, inv) => s + (Number(inv.amount_due) || 0), 0);
   const totalBilled = filtered.reduce((s, inv) => s + (Number(inv.total_amount) || 0), 0);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportCSV = async () => {
+    try {
+      setIsExporting(true);
+      const query = new URLSearchParams();
+      if (statusFilter && statusFilter !== "ALL") query.append("status", statusFilter);
+      if (searchQuery) query.append("search", searchQuery);
+
+      try {
+        await api.downloadAndSave(
+          `/accounting/invoices/export?${query.toString()}`,
+          `invoices_export_${new Date().toISOString().slice(0, 10)}.csv`
+        );
+        toast.success("Invoices exported to CSV successfully.");
+      } catch {
+        // Instant client-side fallback
+        const headers = [
+          "Invoice Number",
+          "Customer / Company",
+          "Invoice Date",
+          "Due Date",
+          "Currency",
+          "Total Billed (INR)",
+          "Amount Paid (INR)",
+          "Balance Due (INR)",
+          "Status",
+          "Sales Order",
+        ];
+        const rows = filtered.map((inv) => [
+          inv.invoice_number,
+          inv.company_name || "Client",
+          formatDate(inv.invoice_date),
+          formatDate(inv.due_date),
+          inv.currency || "INR",
+          inv.total_amount,
+          inv.amount_paid,
+          inv.amount_due,
+          inv.status,
+          inv.sales_order_number || "",
+        ]);
+        exportToCsv(`invoices_export_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+        toast.success("Invoices exported to CSV successfully.");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to export invoices");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-6 text-slate-900 dark:text-slate-100">
@@ -184,7 +237,17 @@ export default function InvoicesListPage() {
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={handleExportCSV}
+            className="inline-flex items-center px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 shadow-2xs transition-colors disabled:opacity-50"
+            title="Export filtered invoices to CSV / Excel"
+          >
+            <Download className="w-4 h-4 mr-1.5 text-slate-500 dark:text-slate-400" />
+            <span>{isExporting ? "Exporting..." : "Export CSV"}</span>
+          </button>
           <button
             onClick={fetchData}
             disabled={loading}

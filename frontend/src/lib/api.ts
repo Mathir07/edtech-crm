@@ -1,25 +1,32 @@
-export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "/api/v1").replace(/\/+$/, "");
-
-export function getFullApiUrl(endpoint: string): string {
-  if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
-    return endpoint;
-  }
-  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  return `${API_BASE}${cleanEndpoint}`;
-}
-
 export interface ApiError {
   detail: string;
   status: number;
+  message: string;
 }
 
 class ApiClient {
+  public getApiBase(): string {
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return process.env.NEXT_PUBLIC_API_URL;
+    }
+    if (typeof window !== "undefined") {
+      const host = window.location.hostname;
+      if (host !== "localhost" && host !== "127.0.0.1") {
+        return "/api/v1";
+      }
+    }
+    if (process.env.NODE_ENV === "production") {
+      return "/api/v1";
+    }
+    return "http://localhost:8000/api/v1";
+  }
+
   private getHeaders(): HeadersInit {
     const headers: HeadersInit = {
       "Content-Type": "application/json",
     };
     if (typeof window !== "undefined") {
-      const token = localStorage.getItem("crm_access_token");
+      const token = sessionStorage.getItem("crm_access_token") || localStorage.getItem("crm_access_token");
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
@@ -28,7 +35,8 @@ class ApiClient {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = getFullApiUrl(endpoint);
+    const apiBase = this.getApiBase();
+    const url = endpoint.startsWith("http") ? endpoint : `${apiBase}${endpoint}`;
     const headers = { ...this.getHeaders(), ...options.headers };
 
     try {
@@ -36,6 +44,9 @@ class ApiClient {
 
       if (response.status === 401) {
         if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
+          sessionStorage.removeItem("crm_access_token");
+          sessionStorage.removeItem("crm_refresh_token");
+          sessionStorage.removeItem("crm_user");
           localStorage.removeItem("crm_access_token");
           localStorage.removeItem("crm_refresh_token");
           localStorage.removeItem("crm_user");
@@ -45,8 +56,12 @@ class ApiClient {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({ detail: "An unexpected error occurred." }));
+        const detailMsg = typeof errorBody.detail === "string"
+          ? errorBody.detail
+          : (Array.isArray(errorBody.detail) ? errorBody.detail.map((e: any) => e.msg || e).join(", ") : response.statusText);
         const error: ApiError = {
-          detail: errorBody.detail || response.statusText,
+          detail: detailMsg,
+          message: detailMsg,
           status: response.status,
         };
         throw error;
@@ -59,8 +74,14 @@ class ApiClient {
 
       return await response.json();
     } catch (err: any) {
-      if (err.status) throw err;
-      throw { detail: err.message || "Network error. Is the backend server running?", status: 0 };
+      if (err.status !== undefined) throw err;
+      const netMsg = err.message || "Network error. Is the backend server running?";
+      const error: ApiError = {
+        detail: netMsg,
+        message: netMsg,
+        status: 0,
+      };
+      throw error;
     }
   }
 
@@ -94,10 +115,11 @@ class ApiClient {
   }
 
   async upload<T>(endpoint: string, formData: FormData): Promise<T> {
-    const url = getFullApiUrl(endpoint);
+    const apiBase = this.getApiBase();
+    const url = endpoint.startsWith("http") ? endpoint : `${apiBase}${endpoint}`;
     const headers: Record<string, string> = {};
     if (typeof window !== "undefined") {
-      const token = localStorage.getItem("crm_access_token");
+      const token = sessionStorage.getItem("crm_access_token") || localStorage.getItem("crm_access_token");
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
@@ -112,6 +134,9 @@ class ApiClient {
 
       if (response.status === 401) {
         if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
+          sessionStorage.removeItem("crm_access_token");
+          sessionStorage.removeItem("crm_refresh_token");
+          sessionStorage.removeItem("crm_user");
           localStorage.removeItem("crm_access_token");
           localStorage.removeItem("crm_refresh_token");
           localStorage.removeItem("crm_user");
@@ -121,18 +146,23 @@ class ApiClient {
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({ detail: "An unexpected error occurred." }));
-        throw { detail: errorBody.detail || response.statusText, status: response.status };
+        const detailMsg = typeof errorBody.detail === "string"
+          ? errorBody.detail
+          : (Array.isArray(errorBody.detail) ? errorBody.detail.map((e: any) => e.msg || e).join(", ") : response.statusText);
+        throw { detail: detailMsg, message: detailMsg, status: response.status };
       }
 
       return await response.json();
     } catch (err: any) {
-      if (err.status) throw err;
-      throw { detail: err.message || "Network error.", status: 0 };
+      if (err.status !== undefined) throw err;
+      const netMsg = err.message || "Network error.";
+      throw { detail: netMsg, message: netMsg, status: 0 };
     }
   }
 
   async download(endpoint: string): Promise<Blob> {
-    const url = getFullApiUrl(endpoint);
+    const apiBase = this.getApiBase();
+    const url = endpoint.startsWith("http") ? endpoint : `${apiBase}${endpoint}`;
     const headers = { ...this.getHeaders() };
     const response = await fetch(url, { method: "GET", headers });
     if (!response.ok) {
@@ -142,43 +172,16 @@ class ApiClient {
     return await response.blob();
   }
 
-  async downloadFile(endpoint: string, fallbackFilename?: string): Promise<void> {
-    const url = getFullApiUrl(endpoint);
-    const headers = { ...this.getHeaders() };
-    const response = await fetch(url, { method: "GET", headers });
-
-    if (response.status === 401) {
-      if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
-        localStorage.removeItem("crm_access_token");
-        localStorage.removeItem("crm_refresh_token");
-        localStorage.removeItem("crm_user");
-        window.location.href = "/login";
-      }
-    }
-
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({ detail: "Download failed." }));
-      throw new Error(errorBody.detail || `Download failed with status ${response.status}`);
-    }
-
-    let filename = fallbackFilename || "download";
-    const disposition = response.headers.get("Content-Disposition");
-    if (disposition && disposition.includes("filename=")) {
-      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-      if (match && match[1]) {
-        filename = match[1].replace(/['"]/g, "").trim();
-      }
-    }
-
-    const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(blobUrl);
+  async downloadAndSave(endpoint: string, defaultFilename: string = "export.csv"): Promise<void> {
+    const blob = await this.download(endpoint);
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = defaultFilename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
   }
 }
 

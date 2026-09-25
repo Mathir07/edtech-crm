@@ -35,36 +35,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchCurrentUser = async () => {
     try {
-      const token = localStorage.getItem("crm_access_token");
+      const token = sessionStorage.getItem("crm_access_token");
       if (!token) {
         setLoading(false);
         return;
       }
       const userData = await api.get<UserProfile>("/auth/me");
       setUser(userData);
-      localStorage.setItem("crm_user", JSON.stringify(userData));
+      sessionStorage.setItem("crm_user", JSON.stringify(userData));
     } catch (error) {
       console.error("Failed to load user session", error);
       setUser(null);
-      localStorage.removeItem("crm_access_token");
+      sessionStorage.removeItem("crm_access_token");
+      sessionStorage.removeItem("crm_refresh_token");
+      sessionStorage.removeItem("crm_user");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    // Purge any legacy persistent localStorage auth tokens
+    try {
+      localStorage.removeItem("crm_access_token");
+      localStorage.removeItem("crm_refresh_token");
+      localStorage.removeItem("crm_user");
+    } catch {
+      // ignore
+    }
     fetchCurrentUser();
   }, []);
 
   const login = async (email: string, password: string) => {
     const data = await api.post<any>("/auth/login", { email, password });
-    localStorage.setItem("crm_access_token", data.access_token);
-    localStorage.setItem("crm_refresh_token", data.refresh_token);
+    sessionStorage.setItem("crm_access_token", data.access_token);
+    sessionStorage.setItem("crm_refresh_token", data.refresh_token);
     
+    // Clear legacy localStorage if present
+    localStorage.removeItem("crm_access_token");
+    localStorage.removeItem("crm_refresh_token");
+    localStorage.removeItem("crm_user");
+
     // Fetch full profile
     const profile = await api.get<UserProfile>("/auth/me");
     setUser(profile);
-    localStorage.setItem("crm_user", JSON.stringify(profile));
+    sessionStorage.setItem("crm_user", JSON.stringify(profile));
     router.push("/");
   };
 
@@ -74,6 +89,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       // ignore
     } finally {
+      sessionStorage.removeItem("crm_access_token");
+      sessionStorage.removeItem("crm_refresh_token");
+      sessionStorage.removeItem("crm_user");
       localStorage.removeItem("crm_access_token");
       localStorage.removeItem("crm_refresh_token");
       localStorage.removeItem("crm_user");

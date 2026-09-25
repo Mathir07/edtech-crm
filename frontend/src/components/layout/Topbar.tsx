@@ -16,6 +16,7 @@ import {
   Plus,
   Menu,
   ChevronDown,
+  Check,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { notificationsApi, NotificationItem } from "@/lib/notificationsApi";
@@ -35,9 +36,23 @@ export const Topbar: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [recentNotifs, setRecentNotifs] = useState<NotificationItem[]>([]);
   const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const notifDropdownRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleConfirmLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } catch (err) {
+      console.error("Logout error", err);
+    } finally {
+      setIsLoggingOut(false);
+      setIsLogoutConfirmOpen(false);
+    }
+  };
 
   // Global hotkey Ctrl+K for search
   useEffect(() => {
@@ -111,6 +126,62 @@ export const Topbar: React.FC = () => {
     }
   };
 
+  const handleMarkSingleRead = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      await notificationsApi.markRead({ notification_ids: [id] });
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+      setRecentNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleNotificationClick = async (item: NotificationItem) => {
+    if (!item.is_read) {
+      try {
+        await notificationsApi.markRead({ notification_ids: [item.id] });
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+        setRecentNotifs((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
+      } catch {
+        // Ignore
+      }
+    }
+    setIsNotifOpen(false);
+    if (item.entity_type) {
+      const type = item.entity_type.toLowerCase();
+      if (type === "quotation") router.push(`/sales/quotations/${item.entity_id || ""}`);
+      else if (type === "ticket") router.push(`/service/tickets/${item.entity_id || ""}`);
+      else if (type === "lead") router.push(`/leads/${item.entity_id || ""}`);
+      else if (type === "opportunity") router.push(`/opportunities/${item.entity_id || ""}`);
+      else if (type === "invoice") router.push(`/accounting/invoices/${item.entity_id || ""}`);
+      else if (type === "project") router.push(`/projects/${item.entity_id || ""}`);
+      else if (type === "bug") router.push(`/bugs/${item.entity_id || ""}`);
+      else if (type === "task") router.push("/tasks");
+      else router.push("/notifications");
+    } else {
+      router.push("/notifications");
+    }
+  };
+
+  const formatTimeAgo = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      const now = new Date();
+      const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000);
+      if (diffSec < 60) return "Just now";
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHr = Math.floor(diffMin / 60);
+      if (diffHr < 24) return `${diffHr}h ago`;
+      const diffDays = Math.floor(diffHr / 24);
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return d.toLocaleDateString();
+    } catch {
+      return "";
+    }
+  };
+
   // Generate dynamic breadcrumb items
   const pathSegments = pathname.split("/").filter(Boolean);
   const getBreadcrumbTitle = (seg: string) => {
@@ -136,17 +207,22 @@ export const Topbar: React.FC = () => {
 
   return (
     <>
-      <header className="h-16 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 md:px-6 flex items-center justify-between z-20 shadow-2xs">
+      <header className="h-16 shrink-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 md:px-6 flex items-center justify-between z-20 shadow-2xs">
         {/* Left: Sidebar Toggle & Dynamic Breadcrumbs */}
-        <div className="flex items-center space-x-3 min-w-0">
+        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors shrink-0"
             title="Toggle sidebar"
           >
             <Menu className="w-5 h-5" />
           </button>
+
+          {/* Mobile Current Screen Title */}
+          <div className="sm:hidden font-bold text-sm text-slate-900 dark:text-slate-100 whitespace-nowrap truncate">
+            {pathSegments.length > 0 ? getBreadcrumbTitle(pathSegments[pathSegments.length - 1]) : "Dashboard"}
+          </div>
 
           <nav className="hidden sm:flex items-center space-x-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium truncate">
             <Link href="/" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
@@ -198,7 +274,7 @@ export const Topbar: React.FC = () => {
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center space-x-2.5">
+        <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0">
           {/* Search Button for Mobile */}
           <button
             type="button"
@@ -213,16 +289,17 @@ export const Topbar: React.FC = () => {
           <button
             type="button"
             onClick={() => openCreateModal()}
-            className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-xs transition-colors"
+            className="inline-flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-xs transition-colors shrink-0"
+            title="Create new record"
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Create</span>
           </button>
 
-          {/* AI Assistant Shortcut */}
+          {/* AI Assistant Shortcut (visible on tablets/desktop, in menu on mobile) */}
           <Link
             href="/ai"
-            className="p-2 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-colors"
+            className="hidden sm:flex p-2 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-xl transition-colors"
             title="AI Copilot Assistant"
           >
             <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -246,7 +323,7 @@ export const Topbar: React.FC = () => {
 
             {/* Dropdown Panel */}
             {isNotifOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden z-30 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden z-30 animate-in fade-in zoom-in-95 duration-150">
                 <div className="p-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/60 dark:bg-slate-800/60">
                   <div className="flex items-center space-x-2">
                     <span className="text-xs font-bold text-slate-900 dark:text-slate-100">Notifications</span>
@@ -279,14 +356,49 @@ export const Topbar: React.FC = () => {
                     recentNotifs.map((item) => (
                       <div
                         key={item.id}
-                        className={`p-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-start space-x-3 ${
-                          !item.is_read ? "bg-indigo-50/20 dark:bg-indigo-950/30" : ""
+                        onClick={() => handleNotificationClick(item)}
+                        className={`p-3.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-start justify-between gap-2.5 cursor-pointer group ${
+                          !item.is_read ? "bg-indigo-50/30 dark:bg-indigo-950/30" : ""
                         }`}
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{item.title}</div>
-                          <p className="text-2xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">{item.message}</p>
+                          <div className="flex items-center space-x-2">
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                item.priority === "CRITICAL"
+                                  ? "bg-rose-500"
+                                  : item.priority === "HIGH"
+                                  ? "bg-amber-500"
+                                  : "bg-indigo-500"
+                              }`}
+                            />
+                            <span className={`text-xs truncate ${!item.is_read ? "font-bold text-slate-900 dark:text-slate-100" : "font-medium text-slate-700 dark:text-slate-300"}`}>
+                              {item.title}
+                            </span>
+                          </div>
+                          <p className="text-2xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 pl-4">
+                            {item.message}
+                          </p>
+                          <div className="flex items-center space-x-2 mt-1.5 pl-4 text-3xs text-slate-400 dark:text-slate-500">
+                            <span>{formatTimeAgo(item.created_at)}</span>
+                            {item.entity_type && (
+                              <span className="font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                                • {item.entity_type}
+                              </span>
+                            )}
+                          </div>
                         </div>
+
+                        {!item.is_read && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleMarkSingleRead(e, item.id)}
+                            className="p-1 rounded-md text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            title="Mark as read"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     ))}
                 </div>
@@ -328,7 +440,7 @@ export const Topbar: React.FC = () => {
 
             {/* User Dropdown */}
             {isUserMenuOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 py-1 z-30 animate-in fade-in zoom-in-95 duration-150">
+              <div className="absolute right-0 mt-2 w-56 max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 py-1 z-30 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{user?.full_name}</div>
                   <div className="text-2xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{user?.email}</div>
@@ -361,7 +473,7 @@ export const Topbar: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setIsUserMenuOpen(false);
-                      logout();
+                      setIsLogoutConfirmOpen(true);
                     }}
                     className="w-full flex items-center space-x-2.5 px-4 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
                   >
@@ -384,6 +496,63 @@ export const Topbar: React.FC = () => {
         onClose={closeCreateModal}
         initialType={createType}
       />
+
+      {/* Sign Out Confirmation Modal */}
+      {isLogoutConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="logout-confirm-title"
+          onClick={() => !isLoggingOut && setIsLogoutConfirmOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl relative transition-all transform animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center space-x-3.5 mb-4">
+              <div className="w-11 h-11 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0 shadow-xs">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div>
+                <h3
+                  id="logout-confirm-title"
+                  className="text-base font-semibold text-slate-900 dark:text-white leading-tight"
+                >
+                  Sign Out
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Confirm session termination
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
+              Are you sure you want to sign out of Kiwi CRM? You will need to log in again to access your workplace.
+            </p>
+
+            <div className="flex items-center justify-end space-x-2.5">
+              <button
+                type="button"
+                disabled={isLoggingOut}
+                onClick={() => setIsLogoutConfirmOpen(false)}
+                className="px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors focus:outline-hidden disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isLoggingOut}
+                onClick={handleConfirmLogout}
+                className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded-lg shadow-sm shadow-rose-600/30 transition-all flex items-center space-x-1.5 focus:outline-hidden disabled:opacity-50"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>{isLoggingOut ? "Signing Out..." : "Yes, Sign Out"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

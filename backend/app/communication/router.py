@@ -4,7 +4,7 @@ import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File, Form, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func
 
@@ -13,6 +13,7 @@ from app.core.deps import require_permission, require_any_permission, get_curren
 from app.core.audit import record_audit_log
 from app.core.crypto import encrypt_secret, decrypt_secret
 from app.core.file_security import validate_uploaded_file
+from app.core.storage import StorageBackend, get_storage_backend
 from app.core.config import settings
 from app.users.models import User
 from app.organizations.models import Company, Contact
@@ -45,10 +46,6 @@ from app.communication.services import (
 from app.communication.telephony import telephony_service
 
 router = APIRouter()
-
-# UPLOAD DIRECTORY
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads", "communications")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Providers (Hostinger Email is Primary)
 hostinger_provider = HostingerEmailProvider()
@@ -1805,6 +1802,7 @@ async def upload_communication_attachment(
     request: Request = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("communications.view")),
+    storage: StorageBackend = Depends(get_storage_backend),
 ):
     msg = db.query(CommunicationMessage).filter(CommunicationMessage.id == message_id).first()
     if not msg:
@@ -1812,23 +1810,21 @@ async def upload_communication_attachment(
 
     file_bytes = await file.read()
     max_size = 15 * 1024 * 1024  # 15MB limit
-    safe_filename = validate_uploaded_file(
+
+    storage_res = storage.upload(
+        file_bytes=file_bytes,
         filename=file.filename or "attachment",
-        file_bytes_len=len(file_bytes),
+        content_type=file.content_type or "application/octet-stream",
+        prefix=f"communications/{msg.id}",
         max_size_bytes=max_size,
     )
 
-    saved_filename = f"comm_{uuid.uuid4().hex[:8]}_{safe_filename}"
-    file_path = os.path.join(UPLOAD_DIR, saved_filename)
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
-
     att = CommunicationAttachment(
         message_id=msg.id,
-        filename=safe_filename,
-        file_path=file_path,
-        file_size=len(file_bytes),
-        content_type=file.content_type or "application/octet-stream",
+        filename=storage_res.filename,
+        file_path=storage_res.key,
+        file_size=storage_res.size,
+        content_type=storage_res.content_type,
         uploaded_by_id=current_user.id,
     )
     db.add(att)
@@ -1843,16 +1839,25 @@ def download_communication_attachment(
     attachment_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("communications.view")),
+    storage: StorageBackend = Depends(get_storage_backend),
 ):
     att = db.query(CommunicationAttachment).filter(CommunicationAttachment.id == attachment_id).first()
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    if not os.path.exists(att.file_path):
+    if not storage.exists(att.file_path):
         raise HTTPException(status_code=404, detail="File content not found on server")
 
-    return FileResponse(
-        path=att.file_path,
-        filename=att.filename,
-        media_type=att.content_type,
+    try:
+        stream, content_type, size = storage.get_stream(att.file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File content not found on server")
+
+    return StreamingResponse(
+        stream,
+        media_type=att.content_type or content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{att.filename}"',
+            "Content-Length": str(size),
+        },
     )

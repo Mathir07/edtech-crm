@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.users.models import User
 from app.organizations.models import Company, Contact
 from app.activities.models import Task, Meeting
@@ -459,3 +460,29 @@ def test_hostinger_email_notification_mock(mock_send_email, db_session: Session)
 
     assert notif is not None
     assert mock_send_email.called
+
+
+def test_vercel_cron_automation_trigger_via_get_and_secret(client: TestClient, monkeypatch):
+    """Verifies Vercel Cron can trigger /api/v1/automation/run via HTTP GET with CRON_SECRET."""
+    monkeypatch.setattr(settings, "CRON_SECRET", "test_vercel_cron_secret_abc123")
+
+    # 1. Unauthenticated GET request is rejected with 401
+    unauth_resp = client.get("/api/v1/automation/run")
+    assert unauth_resp.status_code == 401
+
+    # 2. Invalid secret is rejected with 401
+    bad_secret_resp = client.get(
+        "/api/v1/automation/run",
+        headers={"Authorization": "Bearer wrong_secret"},
+    )
+    assert bad_secret_resp.status_code == 401
+
+    # 3. Valid CRON_SECRET with GET succeeds with HTTP 200
+    cron_resp = client.get(
+        "/api/v1/automation/run",
+        headers={"Authorization": "Bearer test_vercel_cron_secret_abc123"},
+    )
+    assert cron_resp.status_code == 200
+    data = cron_resp.json()
+    assert data["status"] == "COMPLETED"
+    assert "jobs_executed" in data

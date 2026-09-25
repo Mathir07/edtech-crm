@@ -85,7 +85,7 @@ In production, schema DDL is strictly executed via Alembic migrations. Runtime `
    ```bash
    alembic check
    ```
-3. Run upgrade to latest head (`f5711f63c736`):
+3. Run upgrade to latest head (`b9e8d7c6b5a4`):
    ```bash
    alembic upgrade head
    ```

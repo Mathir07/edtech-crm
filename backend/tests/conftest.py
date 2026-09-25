@@ -6,7 +6,11 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
 from app.main import app
+from app.core.config import settings
 from app.core.database import Base, get_db
+
+# Disable rate limiting for automated tests to prevent 429 errors
+settings.RATE_LIMIT_ENABLED = False
 from app.core.security import get_password_hash, create_access_token
 from app.users.models import User, Role, Permission, Department
 from app.sales.models import Pipeline, PipelineStage
@@ -14,17 +18,28 @@ from app.accounting.models import Account, FiscalPeriod, TaxRate
 from datetime import date
 from decimal import Decimal
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+import os
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+if TEST_DATABASE_URL:
+    if TEST_DATABASE_URL.startswith("postgres://"):
+        TEST_DATABASE_URL = TEST_DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+    elif TEST_DATABASE_URL.startswith("postgresql://") and not TEST_DATABASE_URL.startswith("postgresql+"):
+        TEST_DATABASE_URL = TEST_DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+    engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+else:
+    SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_database():
+    if TEST_DATABASE_URL:
+        Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     
@@ -506,10 +521,11 @@ def setup_database():
 def db_session() -> Generator[Session, None, None]:
     connection = engine.connect()
     transaction = connection.begin()
-    session = TestingSessionLocal(bind=connection)
+    session = TestingSessionLocal(bind=connection, join_transaction_mode="create_savepoint")
     yield session
     session.close()
-    transaction.rollback()
+    if transaction.is_active:
+        transaction.rollback()
     connection.close()
 
 @pytest.fixture

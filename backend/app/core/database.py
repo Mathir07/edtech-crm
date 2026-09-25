@@ -3,7 +3,6 @@ from datetime import datetime, timezone
 from typing import Generator
 from sqlalchemy import create_engine, event, Column, String, DateTime, Boolean, func
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
-from sqlite3 import Connection as SQLite3Connection
 from app.core.config import settings
 
 def generate_uuid() -> str:
@@ -29,15 +28,19 @@ if not is_sqlite:
 engine = create_engine(settings.DATABASE_URL, **engine_kwargs)
 
 if is_sqlite:
-    @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        if isinstance(dbapi_connection, SQLite3Connection):
-            cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA foreign_keys=ON;")
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            cursor.execute("PRAGMA busy_timeout=5000;")
-            cursor.execute("PRAGMA synchronous=NORMAL;")
-            cursor.close()
+    try:
+        from sqlite3 import Connection as SQLite3Connection
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            if isinstance(dbapi_connection, SQLite3Connection):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA foreign_keys=ON;")
+                cursor.execute("PRAGMA journal_mode=WAL;")
+                cursor.execute("PRAGMA busy_timeout=5000;")
+                cursor.execute("PRAGMA synchronous=NORMAL;")
+                cursor.close()
+    except ImportError:
+        pass
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

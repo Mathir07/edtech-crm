@@ -6,6 +6,7 @@ from sqlalchemy import desc, func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_permission
+from app.core.config import settings
 from app.core.audit import record_audit_log
 from app.users.models import User
 from app.notifications.models import (
@@ -26,11 +27,13 @@ from app.notifications.schemas import (
     AutomationRuleUpdateRequest,
     AutomationJobLogResponse,
     AutomationRunResponse,
+    TestNotificationRequest,
 )
 from app.notifications.automation import (
     ensure_default_rules,
     execute_all_automations,
     execute_automation_rule,
+    create_notification_if_unique,
 )
 
 # 1. Notifications Router
@@ -234,6 +237,29 @@ def delete_notification(
     return {"success": True, "message": "Notification deleted"}
 
 
+@router.post("/test", response_model=NotificationResponse)
+def trigger_test_notification(
+    payload: TestNotificationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sends a real-time test notification to the current logged-in user."""
+    notif = create_notification_if_unique(
+        db=db,
+        user_id=current_user.id,
+        notification_type=payload.notification_type or "SYSTEM_TEST",
+        title=payload.title,
+        message=payload.message,
+        entity_type=payload.entity_type,
+        entity_id=payload.entity_id,
+        priority=payload.priority or "HIGH",
+        dedup_key=None,
+    )
+    db.commit()
+    db.refresh(notif)
+    return notif
+
+
 # --- Automation Rules & Job Logs Endpoints ---
 
 @automation_router.get("/rules", response_model=List[AutomationRuleResponse])
@@ -317,14 +343,47 @@ def update_automation_rule(
     return rule
 
 
-@automation_router.post("/run", response_model=AutomationRunResponse)
-def trigger_automations(
-    rule_key: Optional[str] = Query(None, description="Optional specific rule key to execute"),
-    request: Request = None,
+def verify_automation_trigger_auth(
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("automation.manage")),
+) -> Optional[User]:
+    """
+    Authorizes /api/v1/automation/run for either:
+    1. Vercel Cron invocation via Authorization: Bearer <CRON_SECRET>
+    2. CRM Admin user with 'automation.manage' permission via standard JWT
+    """
+    auth_header = request.headers.get("Authorization", "")
+    cron_secret = getattr(settings, "CRON_SECRET", "")
+
+    if cron_secret and auth_header == f"Bearer {cron_secret}":
+        return None  # Authorized via Vercel CRON_SECRET
+
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for automation trigger.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = auth_header[7:]
+    user = get_current_user(db=db, token=token)
+    user_perms = user.get_permission_codes()
+    if "*" not in user_perms and "automation.manage" not in user_perms:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied. Required permission: 'automation.manage'",
+        )
+    return user
+
+
+@automation_router.api_route("/run", methods=["GET", "POST"], response_model=AutomationRunResponse)
+def trigger_automations(
+    request: Request,
+    rule_key: Optional[str] = Query(None, description="Optional specific rule key to execute"),
+    db: Session = Depends(get_db),
+    _auth: Optional[User] = Depends(verify_automation_trigger_auth),
 ):
-    """Manually triggers background automation scans across the CRM system."""
+    """Triggers background automation scans across the CRM system (via Vercel Cron GET or Admin POST)."""
     if rule_key:
         log = execute_automation_rule(db, rule_key)
         logs = [log]
@@ -341,6 +400,7 @@ def trigger_automations(
         "total_emails_sent": total_emails,
         "logs": logs,
     }
+
 
 
 @automation_router.get("/logs", response_model=List[AutomationJobLogResponse])

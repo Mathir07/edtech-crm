@@ -21,6 +21,12 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  FileText,
+  Users,
+  LifeBuoy,
+  Plus,
+  Send,
+  X,
 } from "lucide-react";
 import { notificationsApi, NotificationItem } from "@/lib/notificationsApi";
 
@@ -38,6 +44,18 @@ export default function NotificationsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Test Notification Simulation Modal State
+  const [isTestModalOpen, setIsTestModalOpen] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
+  const [testForm, setTestForm] = useState({
+    title: "Quotation Q-2026-004 Approved",
+    message: "Commercial proposal for Apex Tech was approved by the Sales Director. Ready for client delivery.",
+    priority: "HIGH",
+    notification_type: "QUOTATION_APPROVED",
+    entity_type: "QUOTATION",
+    entity_id: "",
+  });
 
   const fetchNotifications = async () => {
     try {
@@ -108,25 +126,43 @@ export default function NotificationsPage() {
 
     if (item.entity_type) {
       const type = item.entity_type.toLowerCase();
-      if (type === "task") router.push("/tasks");
-      else if (type === "meeting") router.push("/meetings");
-      else if (type === "lead") router.push("/crm/leads");
-      else if (type === "opportunity") router.push("/sales/opportunities");
-      else if (type === "invoice") router.push("/accounting/invoices");
-      else if (type === "ticket") router.push("/service/tickets");
-      else if (type === "project") router.push("/projects");
-      else if (type === "bug") router.push("/qa/bugs");
+      if (type === "quotation") router.push(`/sales/quotations/${item.entity_id || ""}`);
+      else if (type === "ticket") router.push(`/service/tickets/${item.entity_id || ""}`);
+      else if (type === "lead") router.push(`/leads/${item.entity_id || ""}`);
+      else if (type === "opportunity") router.push(`/opportunities/${item.entity_id || ""}`);
+      else if (type === "invoice") router.push(`/accounting/invoices/${item.entity_id || ""}`);
+      else if (type === "project") router.push(`/projects/${item.entity_id || ""}`);
+      else if (type === "bug") router.push(`/bugs/${item.entity_id || ""}`);
+      else if (type === "task") router.push("/tasks");
+      else if (type === "meeting") router.push("/activities");
+    }
+  };
+
+  const handleSendTestNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSendingTest(true);
+      await notificationsApi.triggerTestNotification(testForm);
+      setIsTestModalOpen(false);
+      await fetchNotifications();
+    } catch (err) {
+      console.error("Failed to send test notification", err);
+    } finally {
+      setSendingTest(false);
     }
   };
 
   const renderIcon = (type: string) => {
-    if (type.includes("BUG")) return <Bug className="w-4 h-4 text-rose-600" />;
-    if (type.includes("SLA")) return <AlertTriangle className="w-4 h-4 text-amber-600" />;
-    if (type.includes("INVOICE") || type.includes("PAYMENT")) return <DollarSign className="w-4 h-4 text-emerald-600" />;
-    if (type.includes("MEETING")) return <Calendar className="w-4 h-4 text-sky-600" />;
-    if (type.includes("TASK")) return <Clock className="w-4 h-4 text-indigo-600" />;
-    if (type.includes("PROJECT")) return <Briefcase className="w-4 h-4 text-purple-600" />;
-    return <Sparkles className="w-4 h-4 text-blue-600" />;
+    if (type.includes("QUOTATION")) return <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />;
+    if (type.includes("TICKET")) return <LifeBuoy className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
+    if (type.includes("LEAD")) return <Users className="w-4 h-4 text-sky-600 dark:text-sky-400" />;
+    if (type.includes("BUG")) return <Bug className="w-4 h-4 text-rose-600 dark:text-rose-400" />;
+    if (type.includes("SLA")) return <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
+    if (type.includes("INVOICE") || type.includes("PAYMENT")) return <DollarSign className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+    if (type.includes("MEETING")) return <Calendar className="w-4 h-4 text-sky-600 dark:text-sky-400" />;
+    if (type.includes("TASK")) return <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />;
+    if (type.includes("PROJECT")) return <Briefcase className="w-4 h-4 text-purple-600 dark:text-purple-400" />;
+    return <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
   };
 
   const getPriorityBadge = (priority: string) => {
@@ -149,7 +185,7 @@ export default function NotificationsPage() {
   });
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 animate-in fade-in-50 duration-200">
+    <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in-50 duration-200">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-6">
         <div>
@@ -183,6 +219,15 @@ export default function NotificationsPage() {
               <span>Mark All as Read</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setIsTestModalOpen(true)}
+            className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-sm font-medium transition-colors"
+            title="Create a test alert to verify real-time notification delivery"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Simulate Alert</span>
+          </button>
           <Link
             href="/settings/notifications"
             className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-sm font-medium transition-colors shadow-xs"
@@ -405,6 +450,177 @@ export default function NotificationsPage() {
           </div>
         )}
       </div>
+
+      {/* Test Notification Simulator Modal */}
+      {isTestModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden my-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
+              <div className="flex items-center space-x-2">
+                <Bell className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Simulate Real-Time Alert</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTestModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendTestNotification} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                  Notification Scenario
+                </label>
+                <select
+                  value={testForm.notification_type}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "QUOTATION_APPROVED") {
+                      setTestForm({
+                        title: "Quotation Q-2026-004 Approved",
+                        message: "Commercial proposal for Apex Tech was approved by the Sales Director. Ready for client delivery.",
+                        priority: "HIGH",
+                        notification_type: "QUOTATION_APPROVED",
+                        entity_type: "QUOTATION",
+                        entity_id: "",
+                      });
+                    } else if (val === "QUOTATION_SUBMITTED") {
+                      setTestForm({
+                        title: "Quotation Q-2026-005 Pending Review",
+                        message: "A new quotation of ₹4,50,000 for Kiwi Edu was submitted for management sign-off.",
+                        priority: "HIGH",
+                        notification_type: "QUOTATION_SUBMITTED",
+                        entity_type: "QUOTATION",
+                        entity_id: "",
+                      });
+                    } else if (val === "TICKET_ASSIGNED") {
+                      setTestForm({
+                        title: "Support Ticket #1042 Assigned",
+                        message: "You were assigned ticket: 'VPN Gateway connectivity issue' with HIGH SLA priority.",
+                        priority: "HIGH",
+                        notification_type: "TICKET_ASSIGNED",
+                        entity_type: "TICKET",
+                        entity_id: "",
+                      });
+                    } else if (val === "LEAD_ASSIGNED") {
+                      setTestForm({
+                        title: "New High-Value Lead Assigned",
+                        message: "You have been assigned lead 'Karan Sharma (St. Joseph College of Engineering)'.",
+                        priority: "MEDIUM",
+                        notification_type: "LEAD_ASSIGNED",
+                        entity_type: "LEAD",
+                        entity_id: "",
+                      });
+                    } else if (val === "PAYMENT_RECEIVED") {
+                      setTestForm({
+                        title: "Invoice #INV-2026-003 Paid",
+                        message: "A wire transfer receipt of ₹2,36,000 has been verified and settled.",
+                        priority: "MEDIUM",
+                        notification_type: "PAYMENT_RECEIVED",
+                        entity_type: "INVOICE",
+                        entity_id: "",
+                      });
+                    }
+                  }}
+                  className="w-full text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5"
+                >
+                  <option value="QUOTATION_APPROVED">Quotation Approved (Sales)</option>
+                  <option value="QUOTATION_SUBMITTED">Quotation Awaiting Review (Management)</option>
+                  <option value="TICKET_ASSIGNED">Support Ticket Assigned (Service)</option>
+                  <option value="LEAD_ASSIGNED">Lead Assigned (CRM Sales)</option>
+                  <option value="PAYMENT_RECEIVED">Payment Settled (Finance)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                  Notification Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={testForm.title}
+                  onChange={(e) => setTestForm({ ...testForm, title: e.target.value })}
+                  className="w-full text-xs text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                  Notification Message
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={testForm.message}
+                  onChange={(e) => setTestForm({ ...testForm, message: e.target.value })}
+                  className="w-full text-xs text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                    Priority Level
+                  </label>
+                  <select
+                    value={testForm.priority}
+                    onChange={(e) => setTestForm({ ...testForm, priority: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="CRITICAL">Critical</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                    Target Module
+                  </label>
+                  <select
+                    value={testForm.entity_type}
+                    onChange={(e) => setTestForm({ ...testForm, entity_type: e.target.value })}
+                    className="w-full text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5"
+                  >
+                    <option value="QUOTATION">Quotation</option>
+                    <option value="TICKET">Support Ticket</option>
+                    <option value="LEAD">Sales Lead</option>
+                    <option value="INVOICE">Invoice</option>
+                    <option value="OPPORTUNITY">Opportunity</option>
+                    <option value="TASK">Task</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTestModalOpen(false)}
+                  className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingTest}
+                  className="inline-flex items-center space-x-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{sendingTest ? "Delivering..." : "Deliver Alert"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -28,6 +28,7 @@ backend/*.db
 backend/*.db-journal
 backend/*.db-wal
 backend/*.db-shm
+backend/*.db.backup*
 backend/*.sqlite*
 storage/*.db
 storage/*.sqlite*
@@ -77,5 +78,3 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 Desktop.ini
-.vercel/
-frontend/.vercel/

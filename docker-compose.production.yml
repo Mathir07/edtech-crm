@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   db:
     image: postgres:16-alpine
@@ -7,8 +9,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-edtech_crm}
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,8 +22,6 @@ services:
     image: redis:7-alpine
     container_name: kct_crm_redis
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -46,7 +44,11 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-edtech_crm}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_URL: redis://redis:6379/0
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-1800}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-https://crm.kiwicloudtech.co.in}
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_LOGIN_PER_MINUTE: ${RATE_LIMIT_LOGIN_PER_MINUTE:-10}
@@ -69,26 +71,20 @@ services:
       TELEPHONY_PROVIDER: ${TELEPHONY_PROVIDER:-none}
       TELEPHONY_BUSINESS_NUMBER: ${TELEPHONY_BUSINESS_NUMBER:-}
       COMM_NOTIFICATION_EMAILS_ENABLED: ${COMM_NOTIFICATION_EMAILS_ENABLED:-false}
-      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-none}
-      WHATSAPP_API_URL: ${WHATSAPP_API_URL:-https://graph.facebook.com/v18.0}
-      WHATSAPP_API_TOKEN: ${WHATSAPP_API_TOKEN:-}
-      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
-      WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET:-}
       AI_PROVIDER: ${AI_PROVIDER:-mock}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
-      AI_MAX_PROMPT_LENGTH: ${AI_MAX_PROMPT_LENGTH:-2000}
-      AI_MAX_TOOL_RESULTS: ${AI_MAX_TOOL_RESULTS:-10}
     volumes:
-      - storage_data:/app/storage
-      - upload_data:/app/uploads
-    ports:
-      - "127.0.0.1:8000:8000"
+      - ./uploads:/app/uploads
+    expose:
+      - "8000"
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/readiness || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -102,10 +98,8 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.crm.kiwicloudtech.co.in/api/v1}
     container_name: kct_crm_frontend
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.crm.kiwicloudtech.co.in/api/v1}
+    expose:
+      - "3000"
     depends_on:
       - backend
 
@@ -118,8 +112,6 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.production.conf:/etc/nginx/nginx.conf:ro
-      - certbot_conf:/etc/letsencrypt:ro
-      - certbot_www:/var/www/certbot:ro
     depends_on:
       - backend
       - frontend
@@ -127,7 +119,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  storage_data:
-  upload_data:
-  certbot_conf:
-  certbot_www:

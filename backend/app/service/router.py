@@ -5,18 +5,20 @@ import io
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, UploadFile, File, Form
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
 from app.core.database import get_db
 from app.core.deps import require_permission, require_any_permission, get_current_user
 from app.core.audit import record_audit_log
+from app.core.storage import get_storage_backend, StorageBackend
 from app.users.models import User, Team
 from app.organizations.models import Company, Contact
 from app.projects.models import Project
 from app.sales.models import SalesOrder, Contract
 from app.qa.models import Bug
+from app.notifications.dispatcher import notify_ticket_assigned
 
 from app.service.models import (
     ServiceCategory,
@@ -72,13 +74,6 @@ from app.service.calculations import (
 )
 
 router = APIRouter()
-
-UPLOAD_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "storage",
-    "ticket_attachments"
-)
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 @router.get("/service/status", tags=["Service & Support"])
@@ -699,6 +694,10 @@ def create_ticket(
             notes="Initial ticket assignment",
         )
         db.add(assign_hist)
+        if data.assigned_to_id != current_user.id:
+            assignee_u = db.query(User).filter(User.id == data.assigned_to_id).first()
+            if assignee_u:
+                notify_ticket_assigned(db, ticket, assignee_u, current_user)
 
     record_audit_log(
         db=db,
@@ -1001,6 +1000,8 @@ def update_ticket_assignment(
         ticket.assigned_at = now
         if ticket.status in ("NEW", "OPEN"):
             ticket.status = "ASSIGNED"
+        if assignee.id != current_user.id:
+            notify_ticket_assigned(db, ticket, assignee, current_user)
     else:
         ticket.assigned_to_id = None
         ticket.assigned_by_id = None
@@ -1520,36 +1521,34 @@ async def upload_ticket_attachment(
     request: Request = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("service.edit")),
+    storage: StorageBackend = Depends(get_storage_backend),
 ):
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id, Ticket.is_deleted == False).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     file_bytes = await file.read()
-    max_size = 10 * 1024 * 1024  # 10MB
-    if len(file_bytes) > max_size:
-        raise HTTPException(status_code=400, detail="File size exceeds maximum allowed 10MB limit.")
+    max_size = 10 * 1024 * 1024  # 10MB limit
 
-    safe_filename = os.path.basename(file.filename or "attachment")
-    allowed_exts = [".png", ".jpg", ".jpeg", ".pdf", ".txt", ".log", ".json", ".zip", ".csv", ".docx", ".xlsx"]
-    ext = os.path.splitext(safe_filename)[1].lower()
-    if ext not in allowed_exts:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(allowed_exts)}"
-        )
+    service_allowed_exts = {
+        ".png", ".jpg", ".jpeg", ".pdf", ".txt", ".log", ".json", ".zip", ".csv", ".docx", ".xlsx"
+    }
 
-    saved_filename = f"{ticket.ticket_number}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{safe_filename}"
-    file_path = os.path.join(UPLOAD_DIR, saved_filename)
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
+    storage_res = storage.upload(
+        file_bytes=file_bytes,
+        filename=file.filename or "attachment",
+        content_type=file.content_type or "application/octet-stream",
+        prefix=f"tickets/{ticket.id}",
+        max_size_bytes=max_size,
+        allowed_extensions=service_allowed_exts,
+    )
 
     att = TicketAttachment(
         ticket_id=ticket.id,
-        filename=safe_filename,
-        file_size=len(file_bytes),
-        content_type=file.content_type or "application/octet-stream",
-        file_path=file_path,
+        filename=storage_res.filename,
+        file_size=storage_res.size,
+        content_type=storage_res.content_type,
+        file_path=storage_res.key,
         uploaded_by_id=current_user.id,
     )
     db.add(att)
@@ -1562,7 +1561,7 @@ async def upload_ticket_attachment(
         entity_id=ticket.id,
         user_id=current_user.id,
         user_email=current_user.email,
-        new_values={"filename": safe_filename, "size": len(file_bytes)},
+        new_values={"filename": storage_res.filename, "size": storage_res.size, "key": storage_res.key},
         request=request,
     )
     db.commit()
@@ -1587,6 +1586,7 @@ def download_ticket_attachment(
     attachment_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("service.view")),
+    storage: StorageBackend = Depends(get_storage_backend),
 ):
     att = db.query(TicketAttachment).filter(
         TicketAttachment.id == attachment_id,
@@ -1595,13 +1595,21 @@ def download_ticket_attachment(
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    if not os.path.exists(att.file_path):
+    if not storage.exists(att.file_path):
         raise HTTPException(status_code=404, detail="Attachment file not found on server storage")
 
-    return FileResponse(
-        path=att.file_path,
-        filename=att.filename,
-        media_type=att.content_type,
+    try:
+        stream, content_type, size = storage.get_stream(att.file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Attachment file not found on server storage")
+
+    return StreamingResponse(
+        stream,
+        media_type=att.content_type or content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{att.filename}"',
+            "Content-Length": str(att.file_size or size),
+        },
     )
 
 

@@ -16,6 +16,8 @@ from app.organizations.models import Company, Contact
 from app.sales.models import SalesOrder, Contract
 from app.projects.models import Project
 from app.sales.calculations import generate_sequential_number
+from app.notifications.dispatcher import notify_invoice_paid
+from app.reports.export import generate_csv_response
 
 from app.accounting.models import (
     Account, FiscalPeriod, JournalEntry, JournalLine,
@@ -753,6 +755,78 @@ def list_invoices(
     return results
 
 
+@router.get("/accounting/invoices/export")
+def export_invoices(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    company_id: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_permission(["accounting.view", "sales.orders.view", "crm.companies.view"])),
+):
+    query = db.query(Invoice).filter(Invoice.is_deleted == False)
+    if status_filter:
+        query = query.filter(Invoice.status == status_filter.upper())
+    if company_id:
+        query = query.filter(Invoice.company_id == company_id)
+    if search:
+        s = f"%{search}%"
+        query = query.filter(Invoice.invoice_number.ilike(s))
+
+    invoices = query.order_by(Invoice.created_at.desc()).all()
+
+    headers = [
+        "Invoice Number",
+        "Customer / Company",
+        "Contact",
+        "Invoice Date",
+        "Due Date",
+        "Currency",
+        "Subtotal",
+        "Discount",
+        "Tax (GST)",
+        "Total Amount",
+        "Amount Paid",
+        "Balance Due",
+        "Status",
+        "Sales Order",
+        "Created At",
+    ]
+
+    rows = []
+    for inv in invoices:
+        company_name = inv.company.organization_name if inv.company else ""
+        contact_name = inv.contact.name if inv.contact else ""
+        so_num = inv.sales_order.order_number if inv.sales_order else ""
+        inv_dt = inv.invoice_date.strftime("%Y-%m-%d") if inv.invoice_date else ""
+        due_dt = inv.due_date.strftime("%Y-%m-%d") if inv.due_date else ""
+        created_dt = inv.created_at.strftime("%Y-%m-%d %H:%M") if inv.created_at else ""
+
+        rows.append([
+            inv.invoice_number,
+            company_name,
+            contact_name,
+            inv_dt,
+            due_dt,
+            inv.currency,
+            f"{float(inv.subtotal):.2f}" if inv.subtotal is not None else "0.00",
+            f"{float(inv.discount_amount):.2f}" if inv.discount_amount is not None else "0.00",
+            f"{float(inv.tax_amount):.2f}" if inv.tax_amount is not None else "0.00",
+            f"{float(inv.total_amount):.2f}" if inv.total_amount is not None else "0.00",
+            f"{float(inv.amount_paid):.2f}" if inv.amount_paid is not None else "0.00",
+            f"{float(inv.amount_due):.2f}" if inv.amount_due is not None else "0.00",
+            inv.status,
+            so_num,
+            created_dt,
+        ])
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return generate_csv_response(
+        filename=f"invoices_export_{timestamp}.csv",
+        headers=headers,
+        rows=rows,
+    )
+
+
 @router.get("/accounting/invoices/{invoice_id}", response_model=InvoiceResponse)
 def get_invoice(
     invoice_id: str,
@@ -1128,6 +1202,7 @@ def create_customer_payment(
         inv.amount_due -= alloc_amt
         if inv.amount_due <= Decimal("0.00"):
             inv.status = "PAID"
+            notify_invoice_paid(db, inv, current_user)
         else:
             inv.status = "PARTIALLY_PAID"
 
@@ -1194,6 +1269,7 @@ def allocate_payment(
     inv.amount_due -= alloc_amt
     if inv.amount_due <= Decimal("0.00"):
         inv.status = "PAID"
+        notify_invoice_paid(db, inv, current_user)
     else:
         inv.status = "PARTIALLY_PAID"
 

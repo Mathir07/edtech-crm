@@ -127,6 +127,17 @@ export const notificationsApi = {
     return api.put<NotificationPreference>("/notifications/preferences", payload);
   },
 
+  triggerTestNotification: (payload?: {
+    title?: string;
+    message?: string;
+    priority?: string;
+    notification_type?: string;
+    entity_type?: string;
+    entity_id?: string;
+  }): Promise<NotificationItem> => {
+    return api.post<NotificationItem>("/notifications/test", payload || {});
+  },
+
   // Automation endpoints
   getAutomationRules: (): Promise<AutomationRule[]> => {
     return api.get<AutomationRule[]>("/automation/rules");

@@ -20,6 +20,15 @@ class NotificationCreate(NotificationBase):
     dedup_key: Optional[str] = None
 
 
+class TestNotificationRequest(BaseModel):
+    title: str = "Test CRM Notification"
+    message: str = "This is a real-time test alert from the Kiwi Cloud Tech Notification Center."
+    priority: str = "HIGH"
+    notification_type: str = "SYSTEM_TEST"
+    entity_type: Optional[str] = None
+    entity_id: Optional[str] = None
+
+
 class NotificationResponse(NotificationBase):
     id: str
     organization_id: str

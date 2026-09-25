@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
+import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { ShellProvider } from "@/components/layout/ShellContext";
 import { Loader2 } from "lucide-react";
 
@@ -43,10 +44,11 @@ export default function DashboardLayout({
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0 min-h-0 h-full max-h-full overflow-hidden">
           <Topbar />
-          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden main-content-scroll p-4 md:p-6 lg:p-8 overscroll-y-contain bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden main-content-scroll p-3 sm:p-4 md:p-6 lg:p-8 pb-20 md:pb-6 overscroll-y-contain bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
             {children}
           </main>
         </div>
+        <MobileBottomNav />
       </div>
     </ShellProvider>
   );

@@ -370,12 +370,11 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
     }
   };
 
-  const handleDownloadAttachment = async (attachmentId: string, fileName: string) => {
-    try {
-      await api.downloadFile(`/service/tickets/${ticketId}/attachments/${attachmentId}/download`, fileName);
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to download attachment.");
-    }
+  const handleDownloadAttachment = (attachmentId: string, fileName: string) => {
+    const token = typeof window !== "undefined" ? (sessionStorage.getItem("crm_access_token") || localStorage.getItem("crm_access_token") || "") : "";
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "/api/v1";
+    const url = `${apiBase}/service/tickets/${ticketId}/attachments/${attachmentId}/download?token=${token}`;
+    window.open(url, "_blank");
   };
 
   if (loading && !ticket) {

@@ -18,11 +18,14 @@ import {
   DollarSign,
   Briefcase,
   ExternalLink,
+  Eye,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Badge } from "@/components/ui/Badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { BrandedInvoiceDocument } from "@/components/documents/BrandedInvoiceDocument";
 
 interface InvoiceItem {
   id: string;
@@ -83,6 +86,7 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [showDocPreview, setShowDocPreview] = useState(false);
 
   // Pay Modal State
   const [isPayModalOpen, setIsPayModalOpen] = useState(false);
@@ -231,8 +235,9 @@ export default function InvoiceDetailPage() {
     new Date(invoice.due_date) < new Date();
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
-      {/* Back Button & Top Navigation */}
+    <>
+      <div className="space-y-6 max-w-7xl mx-auto pb-16 screen-only">
+        {/* Back Button & Top Navigation */}
       <div className="flex items-center justify-between">
         <Link
           href="/accounting/invoices"
@@ -241,13 +246,22 @@ export default function InvoiceDetailPage() {
           <ArrowLeft className="w-4 h-4" />
           Back to Customer Invoices
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 shadow-xs transition-colors"
+            type="button"
+            onClick={() => setShowDocPreview(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 shadow-xs transition-colors"
           >
-            <Printer className="w-4 h-4 text-slate-500 dark:text-slate-400" />
-            Print / PDF
+            <Eye className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            Preview Branded PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-semibold text-white bg-slate-900 dark:bg-slate-100 dark:text-slate-900 rounded-lg hover:bg-slate-800 dark:hover:bg-white shadow-xs transition-colors"
+          >
+            <Printer className="w-4 h-4" />
+            Print / Save PDF
           </button>
         </div>
       </div>
@@ -650,6 +664,55 @@ export default function InvoiceDetailPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Print-Only Container (Rendered exclusively during window.print()) */}
+      <div className="print-only">
+        <BrandedInvoiceDocument data={invoice} forPrint={true} />
+      </div>
+
+      {/* Document Preview Modal */}
+      {showDocPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150 screen-only"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-4xl max-h-[92vh] flex flex-col bg-slate-100 dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-700 overflow-hidden my-auto">
+            {/* Modal Header Bar */}
+            <div className="flex items-center justify-between px-6 py-3.5 bg-slate-900 text-white border-b border-slate-800 shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <Receipt className="w-5 h-5 text-emerald-400" />
+                <span className="text-sm font-bold">Print Preview — Tax Invoice #{invoice.invoice_number}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-sm"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print / Save PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDocPreview(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Document Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-200/60 dark:bg-slate-950">
+              <BrandedInvoiceDocument data={invoice} forPrint={false} />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

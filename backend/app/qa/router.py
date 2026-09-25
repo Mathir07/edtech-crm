@@ -1,15 +1,15 @@
 from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone
 import os
-import shutil
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_permission, require_any_permission
 from app.core.audit import record_audit_log
+from app.core.storage import get_storage_backend, StorageBackend
 from app.users.models import User
 from app.sales.calculations import generate_sequential_number
 from app.projects.models import Project
@@ -25,10 +25,6 @@ from app.qa.schemas import (
 )
 
 router = APIRouter()
-
-# Local storage configuration for bug attachments
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "storage", "bug_attachments")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.get("/qa/status")
 def qa_extension_status():
@@ -660,39 +656,31 @@ async def upload_bug_attachment(
     request: Request = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("bugs.edit")),
+    storage: StorageBackend = Depends(get_storage_backend),
 ):
     b = db.query(Bug).filter(Bug.id == bug_id, Bug.is_deleted == False).first()
     if not b:
         raise HTTPException(status_code=404, detail="Bug not found")
 
-    # Validate file size (max 10MB)
     file_bytes = await file.read()
-    max_size = 10 * 1024 * 1024
-    if len(file_bytes) > max_size:
-        raise HTTPException(status_code=400, detail="File size exceeds maximum allowed 10MB limit.")
+    max_size = 10 * 1024 * 1024  # 10MB limit
+    qa_allowed_exts = {".png", ".jpg", ".jpeg", ".pdf", ".txt", ".log", ".json", ".zip", ".csv"}
 
-    # Validate file type
-    safe_filename = os.path.basename(file.filename or "attachment")
-    allowed_exts = [".png", ".jpg", ".jpeg", ".pdf", ".txt", ".log", ".json", ".zip", ".csv"]
-    ext = os.path.splitext(safe_filename)[1].lower()
-    if ext not in allowed_exts:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(allowed_exts)}"
-        )
-
-    # Secure unique storage path
-    saved_filename = f"{b.bug_number}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{safe_filename}"
-    file_path = os.path.join(UPLOAD_DIR, saved_filename)
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
+    storage_res = storage.upload(
+        file_bytes=file_bytes,
+        filename=file.filename or "attachment",
+        content_type=file.content_type or "application/octet-stream",
+        prefix=f"bugs/{b.id}",
+        max_size_bytes=max_size,
+        allowed_extensions=qa_allowed_exts,
+    )
 
     att = BugAttachment(
         bug_id=b.id,
-        filename=safe_filename,
-        file_size=len(file_bytes),
-        content_type=file.content_type or "application/octet-stream",
-        file_path=file_path,
+        filename=storage_res.filename,
+        file_size=storage_res.size,
+        content_type=storage_res.content_type,
+        file_path=storage_res.key,
         uploaded_by_id=current_user.id,
     )
     db.add(att)
@@ -703,7 +691,7 @@ async def upload_bug_attachment(
         entity_id=b.id,
         user_id=current_user.id,
         user_email=current_user.email,
-        new_values={"filename": safe_filename, "size": len(file_bytes)},
+        new_values={"filename": storage_res.filename, "size": storage_res.size, "key": storage_res.key},
         request=request,
     )
     db.commit()
@@ -727,16 +715,25 @@ def download_bug_attachment(
     att_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("bugs.view")),
+    storage: StorageBackend = Depends(get_storage_backend),
 ):
     att = db.query(BugAttachment).filter(BugAttachment.id == att_id, BugAttachment.bug_id == bug_id).first()
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
 
-    if not os.path.exists(att.file_path):
+    if not storage.exists(att.file_path):
         raise HTTPException(status_code=404, detail="Attachment physical file not found on server storage.")
 
-    return FileResponse(
-        path=att.file_path,
-        filename=att.filename,
-        media_type=att.content_type,
+    try:
+        stream, content_type, size = storage.get_stream(att.file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Attachment physical file not found on server storage.")
+
+    return StreamingResponse(
+        stream,
+        media_type=att.content_type or content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{att.filename}"',
+            "Content-Length": str(att.file_size or size),
+        },
     )

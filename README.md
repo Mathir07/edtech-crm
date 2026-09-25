@@ -23,7 +23,7 @@ Lead ➔ Qualification ➔ Institutional Contact ➔ Requirement Analysis ➔ Me
 
 - **Frontend**: Next.js 16.3.5 (App Router with Turbopack), React 19.2.8, TypeScript 5, Tailwind CSS v4, Lucide Icons
 - **Backend**: Python 3.11, FastAPI (REST API with OpenAPI 3.0), SQLAlchemy 2.0, Pydantic v2
-- **Database**: PostgreSQL 16 with connection pooling (pool_size=10, max_overflow=20), Alembic migrations (supports SQLite for quick zero-dependency local dev)
+- **Database**: PostgreSQL 16 (single primary database with SQLAlchemy 2.0 & `psycopg` driver), QueuePool connection pooling (pool_size=10, max_overflow=20), Alembic migrations. Full details in [docs/POSTGRESQL_MIGRATION_GUIDE.md](file:///d:/Kiwi%20Project/crm_updated_latest/crm/docs/POSTGRESQL_MIGRATION_GUIDE.md)
 - **Security**: JWT Access & Refresh token rotation, Bcrypt password hashing, fine-grained Role-Based Access Control (RBAC), HTTP Security Headers (CSP, HSTS, X-Frame-Options, etc.), In-Memory Sliding-Window Rate Limiting, File Upload Sanitization & Extension Whitelisting, Production Traceback Masking
 - **Operations & Observability**: Health and readiness checks (`/api/health`, `/api/health/readiness`), Request Correlation (`X-Request-ID`), structured logging, automated backup & restore utilities (`scripts/backup_db.py`, `scripts/restore_db.py`)
 - **Deployment**: Docker & Docker Compose, Nginx reverse proxy with SSL readiness
@@ -130,8 +130,15 @@ For immediate testing, run the seed command to create the default users (all wit
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+ and npm
+- PostgreSQL 16+ running locally on port 5432 (or via Docker)
 
-### 1. Backend Setup
+### 1. Database Setup
+Ensure PostgreSQL is running and create the database:
+```sql
+CREATE DATABASE edtech_crm;
+```
+
+### 2. Backend Setup
 ```bash
 cd backend
 python -m venv venv
@@ -144,7 +151,13 @@ python -m venv venv
 
 pip install -r requirements.txt
 
-# Run initial seed (creates tables, roles, demo colleges, deals)
+# Apply all Alembic migrations to PostgreSQL
+alembic upgrade head
+
+# Option A: Import existing SQLite data (if migrating from SQLite)
+python scripts/migrate_sqlite_to_pg.py
+
+# Option B: Run seed data (for fresh demo setup)
 python -m app.seed.seed_data
 
 # Start FastAPI development server
@@ -153,7 +166,9 @@ uvicorn app.main:app --reload --port 8000
 Backend API will be available at: `http://localhost:8000`  
 Swagger UI Docs: `http://localhost:8000/api/v1/docs`
 
-### 2. Frontend Setup
+For full PostgreSQL installation, configuration, backup/restore, and cloud deployment guides, see [docs/POSTGRESQL_MIGRATION_GUIDE.md](file:///d:/Kiwi%20Project/crm_updated_latest/crm/docs/POSTGRESQL_MIGRATION_GUIDE.md).
+
+### 3. Frontend Setup
 ```bash
 cd frontend
 npm install

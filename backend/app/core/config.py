@@ -15,21 +15,24 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # Database
-    DATABASE_URL: str = "sqlite:///./crm.db"  # Defaults to local SQLite for immediate running, overridden by POSTGRESQL in production/docker
+    DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@localhost:5432/edtech_crm"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "edtech_crm"
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = [
-        "https://crm.kiwicloudtech.co.in",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
         "http://localhost",
     ]
-    CORS_ORIGINS: Optional[Union[str, List[str]]] = None
 
     # Company Mail Configuration (Disabled / Not Configured)
     MAIL_PROVIDER: str = "none"
@@ -142,43 +145,30 @@ class Settings(BaseSettings):
     RATE_LIMIT_AI_PER_MINUTE: int = 30
     RATE_LIMIT_COMM_PER_MINUTE: int = 20
 
+    # Automation & Cron
+    CRON_SECRET: str = ""
+
+    # Storage Configuration (Phase 2B)
+    STORAGE_BACKEND: str = "local"  # "local", "s3", "r2", "blob"
+    STORAGE_LOCAL_DIR: str = "storage"
+    STORAGE_BUCKET_NAME: str = ""
+    STORAGE_ENDPOINT_URL: str = ""
+    STORAGE_REGION: str = "auto"
+    STORAGE_ACCESS_KEY_ID: str = ""
+    STORAGE_SECRET_ACCESS_KEY: str = ""
+    STORAGE_PUBLIC_URL_PREFIX: str = ""
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        # Allow CORS_ORIGINS from environment to configure or override BACKEND_CORS_ORIGINS
-        env_val = os.getenv("CORS_ORIGINS") or os.getenv("BACKEND_CORS_ORIGINS") or v
-        if isinstance(env_val, str):
-            if env_val.startswith("[") and env_val.endswith("]"):
+        if isinstance(v, str):
+            if v.startswith("[") and v.endswith("]"):
                 import json
                 try:
-                    return json.loads(env_val)
+                    return json.loads(v)
                 except Exception:
                     pass
-            return [i.strip() for i in env_val.split(",") if i.strip()]
-        return env_val
-
-    @field_validator("DATABASE_URL", mode="before")
-    @classmethod
-    def normalize_database_url(cls, v: str) -> str:
-        if isinstance(v, str):
-            # Render / Neon / Supabase standard URLs:
-            if v.startswith("postgres://"):
-                v = v.replace("postgres://", "postgresql+psycopg://", 1)
-            elif v.startswith("postgresql://") and not v.startswith("postgresql+"):
-                v = v.replace("postgresql://", "postgresql+psycopg://", 1)
-        return v
-
-    @field_validator("DATABASE_URL")
-    @classmethod
-    def validate_production_database(cls, v: str, info) -> str:
-        env = info.data.get("ENVIRONMENT", "development")
-        allow_sqlite = os.getenv("ALLOW_SQLITE_IN_PRODUCTION", "false").lower() in ("true", "1")
-        if env == "production" and v.startswith("sqlite") and not allow_sqlite:
-            raise ValueError(
-                "Production startup aborted: SQLite cannot be used as the production database on persistent workloads. "
-                "PostgreSQL must be used (e.g., postgresql+psycopg://USER:PASSWORD@HOST:PORT/DATABASE). "
-                "If running a temporary demo/test on Render with SQLite, set ALLOW_SQLITE_IN_PRODUCTION=true."
-            )
+            return [i.strip() for i in v.split(",") if i.strip()]
         return v
 
     @field_validator("SECRET_KEY")
@@ -186,18 +176,28 @@ class Settings(BaseSettings):
     def validate_production_secret(cls, v: str, info) -> str:
         env = info.data.get("ENVIRONMENT", "development")
         if env == "production":
-            insecure_placeholders = {
-                "edtech-crm-super-secret-key-change-in-production-min32chars",
-                "CHANGE_ME_TO_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS",
-                "CHANGE_ME_RANDOM_SECRET_MIN_32_CHARS",
-                "replace-with-a-secure-random-32-character-secret-key-in-production",
-            }
-            if not v or v in insecure_placeholders or "CHANGE_ME" in v or len(v) < 32:
+            if v == "edtech-crm-super-secret-key-change-in-production-min32chars" or len(v) < 32:
                 raise ValueError(
                     "Production startup aborted: In production mode, SECRET_KEY must be a unique, "
                     "secure string of at least 32 characters."
                 )
         return v
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def assemble_database_url(cls, v: Optional[str], info) -> str:
+        if v:
+            if v.startswith("postgres://"):
+                return v.replace("postgres://", "postgresql+psycopg://", 1)
+            elif v.startswith("postgresql://") and not v.startswith("postgresql+"):
+                return v.replace("postgresql://", "postgresql+psycopg://", 1)
+            return v
+        user = info.data.get("POSTGRES_USER", "postgres")
+        pwd = info.data.get("POSTGRES_PASSWORD", "postgres")
+        server = info.data.get("POSTGRES_SERVER", "localhost")
+        port = info.data.get("POSTGRES_PORT", 5432)
+        db = info.data.get("POSTGRES_DB", "edtech_crm")
+        return f"postgresql+psycopg://{user}:{pwd}@{server}:{port}/{db}"
 
     model_config = SettingsConfigDict(
         env_file=".env",

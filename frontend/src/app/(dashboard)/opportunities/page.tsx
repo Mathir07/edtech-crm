@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { TrendingUp, Plus, Search, Filter, Building2, Kanban, ArrowRight, Layers } from "lucide-react";
+import { TrendingUp, Plus, Search, Filter, Building2, Kanban, ArrowRight, Layers, Download } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { exportToCsv } from "@/lib/exportCsv";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -61,6 +62,7 @@ export default function OpportunitiesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const { hasPermission } = useAuth();
   const { success, error: toastError } = useToast();
+  const [isExporting, setIsExporting] = useState(false);
 
   // Create Opportunity Modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -144,6 +146,57 @@ export default function OpportunitiesPage() {
     }
   };
 
+  const handleExportCSV = async () => {
+    try {
+      setIsExporting(true);
+      const query = new URLSearchParams();
+      if (pipelineFilter) query.append("pipeline_id", pipelineFilter);
+      if (stageFilter) query.append("stage_id", stageFilter);
+      if (statusFilter) query.append("status", statusFilter);
+      if (search) query.append("search", search);
+
+      try {
+        await api.downloadAndSave(
+          `/opportunities/export?${query.toString()}`,
+          `opportunities_export_${new Date().toISOString().slice(0, 10)}.csv`
+        );
+        success("Export complete", "Opportunities exported to CSV successfully.");
+      } catch {
+        // Instant client-side CSV export fallback
+        const headers = [
+          "Opportunity Title",
+          "Company / College",
+          "Pipeline",
+          "Stage",
+          "Value (INR)",
+          "Probability (%)",
+          "Expected Close Date",
+          "Status",
+          "Owner",
+          "Created At",
+        ];
+        const rows = opportunities.map((o) => [
+          o.title,
+          o.college_name || "Enterprise Client",
+          o.pipeline_name || "Sales",
+          o.stage_name || "",
+          o.value,
+          o.probability,
+          o.expected_close_date ? formatDate(o.expected_close_date) : "",
+          o.status,
+          o.owner_name || "",
+          formatDate(o.created_at),
+        ]);
+        exportToCsv(`opportunities_export_${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+        success("Export complete", "Opportunities exported to CSV successfully.");
+      }
+    } catch (err: any) {
+      toastError("Export failed", err?.message || "Could not generate CSV file.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const totalValue = opportunities.reduce((acc, o) => acc + (Number(o.value) || 0), 0);
 
   // Determine stage options for filtering
@@ -163,7 +216,17 @@ export default function OpportunitiesPage() {
             Commercial deal tracking and contract negotiations across business lines.
           </p>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2 flex-wrap">
+          <button
+            type="button"
+            disabled={isExporting}
+            onClick={handleExportCSV}
+            className="inline-flex items-center px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 shadow-2xs transition-colors disabled:opacity-50"
+            title="Export filtered opportunities to CSV / Excel"
+          >
+            <Download className="w-4 h-4 mr-1.5 text-slate-500 dark:text-slate-400" />
+            <span>{isExporting ? "Exporting..." : "Export CSV"}</span>
+          </button>
           <a
             href="/pipeline"
             className="inline-flex items-center px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 shadow-2xs transition-colors"

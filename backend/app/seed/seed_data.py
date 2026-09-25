@@ -1,4 +1,6 @@
 import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta, date
 from app.core.database import SessionLocal, Base, engine
@@ -380,7 +382,6 @@ def seed():
         print("Seeding default system users...")
         default_pw = get_password_hash("Admin@123")
         users_data = [
-            ("admin@kiwicloudtech.co.in", "Kiwi", "Administrator", "Super Admin", True, True),
             ("admin@edtechcrm.com", "System", "Administrator", "Super Admin", True, True),
             ("sales.manager@edtechcrm.com", "Arun", "Kumar", "Sales Manager", False, False),
             ("sales.exec@edtechcrm.com", "Sneha", "Raman", "Sales Executive", False, False),
@@ -395,6 +396,8 @@ def seed():
         user_objs = {}
         for email, fn, ln, rname, is_super, is_admin in users_data:
             user = db.query(User).filter(User.email == email).first()
+            if not user and is_super:
+                user = db.query(User).filter(User.is_superuser == True).first()
             if not user:
                 dept_id = dept_objs["Management & Strategy"].id
                 t_id = None
@@ -425,11 +428,12 @@ def seed():
                 user.roles = [role_objs[rname]]
                 db.add(user)
                 db.flush()
-            else:
-                user.hashed_password = default_pw
-                user.is_active = True
-                db.flush()
             user_objs[email] = user
+
+        if "admin@edtechcrm.com" not in user_objs or not user_objs["admin@edtechcrm.com"]:
+            super_u = db.query(User).filter(User.is_superuser == True).first()
+            if super_u:
+                user_objs["admin@edtechcrm.com"] = super_u
 
         print("Seeding sales pipelines & stages...")
         print("Preserving existing sales pipeline if present...")

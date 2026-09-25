@@ -19,9 +19,12 @@ import {
   FileText,
   Mail,
   Printer,
+  Eye,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { BrandedQuotationDocument } from "@/components/documents/BrandedQuotationDocument";
 
 interface QuotationItem {
   id: string;
@@ -74,6 +77,7 @@ export default function QuotationDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [showDocPreview, setShowDocPreview] = useState(false);
 
   useEffect(() => {
     loadQuotation();
@@ -189,8 +193,9 @@ export default function QuotationDetailPage() {
   }
 
   return (
-    <div className="p-8 space-y-6 max-w-5xl mx-auto">
-      {/* Top Nav & Breadcrumbs */}
+    <>
+      <div className="space-y-6 max-w-5xl mx-auto screen-only">
+        {/* Top Nav & Breadcrumbs */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Link
@@ -229,11 +234,20 @@ export default function QuotationDetailPage() {
         {/* Quick Duplicate & Print */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => window.print()}
-            className="inline-flex items-center px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs"
+            type="button"
+            onClick={() => setShowDocPreview(true)}
+            className="inline-flex items-center px-3 py-1.5 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-xs transition-colors"
           >
-            <Printer className="w-3.5 h-3.5 mr-1 text-slate-500 dark:text-slate-400" />
-            Print / PDF
+            <Eye className="w-3.5 h-3.5 mr-1.5 text-indigo-600 dark:text-indigo-400" />
+            Preview Proposal
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-lg text-xs font-semibold text-white bg-slate-900 dark:bg-slate-100 dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-white shadow-xs transition-colors"
+          >
+            <Printer className="w-3.5 h-3.5 mr-1.5 text-slate-400 dark:text-slate-600" />
+            Print / Save PDF
           </button>
           {hasPermission("sales.quotations.create") && (
             <button
@@ -516,6 +530,55 @@ export default function QuotationDetailPage() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+
+      {/* Print-Only Container (Rendered exclusively during window.print()) */}
+      <div className="print-only">
+        <BrandedQuotationDocument data={quote} forPrint={true} />
+      </div>
+
+      {/* Commercial Proposal PDF Preview Modal */}
+      {showDocPreview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-150 screen-only"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-4xl max-h-[92vh] flex flex-col bg-slate-100 dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-700 overflow-hidden my-auto">
+            {/* Modal Header Bar */}
+            <div className="flex items-center justify-between px-6 py-3.5 bg-slate-900 text-white border-b border-slate-800 shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <FileText className="w-5 h-5 text-indigo-400" />
+                <span className="text-sm font-bold">Print Preview — Commercial Proposal #{quote.quotation_number}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors shadow-sm"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Print / Save PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDocPreview(false)}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Document Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-200/60 dark:bg-slate-950">
+              <BrandedQuotationDocument data={quote} forPrint={false} />
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

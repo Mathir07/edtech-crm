@@ -70,6 +70,7 @@ if "*" in cors_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=allow_creds,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -102,7 +103,6 @@ def health_check():
     }
 
 # Readiness Check (Verifies database connectivity)
-@app.get("/health/readiness", tags=["Health"])
 @app.get("/api/health/readiness", tags=["Health"])
 def readiness_check():
     try:
